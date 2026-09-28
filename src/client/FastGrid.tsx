@@ -2,6 +2,12 @@ import { FilterCell, Grid, HeaderCell, type Row } from "fast-grid";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { Rfq } from "../shared/rfq";
 import { columnFields, type FilterField } from "./filters";
+import {
+  DEFAULT_COLUMN_WIDTH,
+  clampColumnWidth,
+  fittedWidthFromMeasurements,
+  normalizeColumnWidths,
+} from "./gridLayout";
 
 const headers = [
   "Solicitation",
@@ -16,10 +22,6 @@ const headers = [
   "Delivery days",
 ];
 
-const defaultColumnWidth = 200;
-const minimumColumnWidth = 90;
-const maximumColumnWidth = 560;
-
 type Props = {
   rfqs: Rfq[];
   onSelect: (rfq: Rfq, anchor: PopoverAnchor, field: FilterField) => void;
@@ -27,12 +29,14 @@ type Props = {
   onFilteredChange: (rfqs: Rfq[]) => void;
   columnFilters: Record<number, string>;
   onColumnFiltersChange: (filters: Record<number, string>) => void;
+  columnWidths: number[];
+  onColumnWidthsChange: (widths: number[]) => void;
   onOpenFilterBuilder: (field: FilterField) => void;
   resetVersion: number;
   viewVersion: number;
 };
 
-export type PopoverAnchor = { left: number; right: number; top: number; bottom: number };
+export type PopoverAnchor = { element: HTMLElement };
 
 type SortRule = { column: number; direction: "ascending" | "descending" };
 
@@ -43,6 +47,8 @@ export function FastGrid({
   onFilteredChange,
   columnFilters,
   onColumnFiltersChange,
+  columnWidths,
+  onColumnWidthsChange,
   onOpenFilterBuilder,
   resetVersion,
   viewVersion,
@@ -53,12 +59,12 @@ export function FastGrid({
   const gridRef = useRef<Grid | null>(null);
   const recordsRef = useRef<Rfq[]>(orderedRfqs);
   const sortRulesRef = useRef(sortRules);
-  const columnWidthsRef = useRef(headers.map(() => defaultColumnWidth));
-  const autoFitColumnsRef = useRef(new Set<number>());
+  const columnWidthsRef = useRef(normalizeColumnWidths(columnWidths));
   const onSelectRef = useRef(onSelect);
   const onSelectNsnRef = useRef(onSelectNsn);
   const onFilteredChangeRef = useRef(onFilteredChange);
   const onColumnFiltersChangeRef = useRef(onColumnFiltersChange);
+  const onColumnWidthsChangeRef = useRef(onColumnWidthsChange);
   const onOpenFilterBuilderRef = useRef(onOpenFilterBuilder);
 
   recordsRef.current = orderedRfqs;
@@ -67,6 +73,7 @@ export function FastGrid({
   onSelectNsnRef.current = onSelectNsn;
   onFilteredChangeRef.current = onFilteredChange;
   onColumnFiltersChangeRef.current = onColumnFiltersChange;
+  onColumnWidthsChangeRef.current = onColumnWidthsChange;
   onOpenFilterBuilderRef.current = onOpenFilterBuilder;
 
   useEffect(() => {
@@ -78,32 +85,26 @@ export function FastGrid({
 
     installVariableColumnLayout(grid, columnWidthsRef);
 
-    const setColumnWidth = (column: number, width: number, autoFit: boolean) => {
-      columnWidthsRef.current[column] = Math.max(
-        minimumColumnWidth,
-        Math.min(maximumColumnWidth, Math.round(width)),
-      );
-      if (autoFit) autoFitColumnsRef.current.add(column);
-      else autoFitColumnsRef.current.delete(column);
-      refreshColumnLayout(grid, columnWidthsRef.current);
+    const setColumnWidth = (column: number, width: number) => {
+      const nextWidths = [...columnWidthsRef.current];
+      nextWidths[column] = clampColumnWidth(width);
+      if (nextWidths[column] === columnWidthsRef.current[column]) return;
+      columnWidthsRef.current = nextWidths;
+      refreshColumnLayout(grid, nextWidths);
+      onColumnWidthsChangeRef.current([...nextWidths]);
     };
-    const toggleAutoFit = (column: number) => {
-      if (autoFitColumnsRef.current.has(column)) {
-        setColumnWidth(column, defaultColumnWidth, false);
-        return;
-      }
-      setColumnWidth(column, fittedColumnWidth(column, recordsRef.current), true);
+    const fitColumn = (column: number) => {
+      setColumnWidth(column, measureFittedColumnWidth(grid, column, recordsRef.current));
     };
     const startColumnResize = (event: MouseEvent, column: number) => {
       event.preventDefault();
       event.stopPropagation();
       const startX = event.clientX;
-      const startWidth = columnWidthsRef.current[column] ?? defaultColumnWidth;
-      autoFitColumnsRef.current.delete(column);
+      const startWidth = columnWidthsRef.current[column] ?? DEFAULT_COLUMN_WIDTH;
       document.body.classList.add("column-resizing");
 
       const onMove = (moveEvent: MouseEvent) => {
-        setColumnWidth(column, startWidth + moveEvent.clientX - startX, false);
+        setColumnWidth(column, startWidth + moveEvent.clientX - startX);
       };
       const onUp = () => {
         document.body.classList.remove("column-resizing");
@@ -133,13 +134,7 @@ export function FastGrid({
       if (!component || !rfq) return;
       const cell = Object.values(component.cellComponentMap).find((candidate) => candidate.el.contains(target));
       if (!cell) return;
-      const rect = cell.el.getBoundingClientRect();
-      const anchor = {
-        left: rect.left,
-        right: rect.right,
-        top: rect.top,
-        bottom: rect.bottom,
-      };
+      const anchor = { element: cell.el };
       if (cell?.id === 2 && rfq.nsn) {
         onSelectNsnRef.current(rfq, anchor);
         return;
@@ -159,7 +154,7 @@ export function FastGrid({
     };
     const decorate = () => {
       decorateFilterCells(grid, onOpenFilterBuilderRef, sortRulesRef.current);
-      decorateHeaderCells(grid, toggleAutoFit, startColumnResize);
+      decorateHeaderCells(grid, fitColumn, startColumnResize);
       decorateSolicitationCells(grid, recordsRef.current);
       applyColumnLayout(grid, columnWidthsRef.current);
     };
@@ -179,6 +174,14 @@ export function FastGrid({
       gridRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const nextWidths = normalizeColumnWidths(columnWidths);
+    if (sameWidths(nextWidths, columnWidthsRef.current)) return;
+    columnWidthsRef.current = nextWidths;
+    const grid = gridRef.current;
+    if (grid) refreshColumnLayout(grid, nextWidths);
+  }, [columnWidths]);
 
   useEffect(() => {
     const rows: Row[] = orderedRfqs.map((rfq, id) => ({
@@ -271,7 +274,7 @@ function decorateFilterCells(
 
 function decorateHeaderCells(
   grid: Grid,
-  toggleAutoFit: (column: number) => void,
+  fitColumn: (column: number) => void,
   startResize: (event: MouseEvent, column: number) => void,
 ) {
   for (const candidate of Object.values(grid.headerRows[1]?.cellComponentMap ?? {})) {
@@ -286,7 +289,7 @@ function decorateHeaderCells(
       button.className = "column-title-button";
       button.addEventListener("click", (event) => {
         event.stopPropagation();
-        toggleAutoFit(Number(button?.dataset.column));
+        fitColumn(Number(button?.dataset.column));
       });
       candidate.el.appendChild(button);
 
@@ -302,7 +305,7 @@ function decorateHeaderCells(
     button.dataset.column = String(candidate.id);
     const title = headers[candidate.id] ?? "Column";
     if (button.textContent !== title) button.textContent = title;
-    button.title = "Click to fit content; click again to restore the standard width";
+    button.title = "Click to fit this column's content";
     const resizeHandle = candidate.el.querySelector<HTMLElement>(".column-resize-handle");
     if (resizeHandle) resizeHandle.dataset.column = String(candidate.id);
   }
@@ -360,10 +363,12 @@ function installVariableColumnLayout(
   grid.renderViewportRows = () => {
     baseRenderRows();
     applyColumnLayout(grid, widthsRef.current);
+    grid.container.dispatchEvent(new Event("fast-grid-positionchange", { bubbles: true }));
   };
   grid.renderViewportCells = () => {
     baseRenderCells();
     applyColumnLayout(grid, widthsRef.current);
+    grid.container.dispatchEvent(new Event("fast-grid-positionchange", { bubbles: true }));
   };
 }
 
@@ -395,13 +400,75 @@ function columnOffsets(widths: number[]) {
   return offsets;
 }
 
-function fittedColumnWidth(column: number, rfqs: Rfq[]) {
-  const values = [headers[column] ?? "", ...rfqs.map((rfq) => rfqCellValues(rfq)[column] ?? "")];
-  const longest = values.reduce<number>(
-    (length, value) => Math.max(length, String(value).length),
-    0,
-  );
-  return Math.max(minimumColumnWidth, Math.min(maximumColumnWidth, longest * 7.4 + 34));
+function measureFittedColumnWidth(grid: Grid, column: number, rfqs: Rfq[]) {
+  const measurements: number[] = [];
+  const header = grid.headerRows[1]?.cellComponentMap[column];
+  const headerButton = header?.el.querySelector<HTMLElement>(".column-title-button");
+  if (headerButton) {
+    measurements.push(
+      measureTextBox(headerButton, headers[column] ?? "") + horizontalBorderWidth(header.el),
+    );
+  }
+
+  const filter = grid.headerRows[0]?.cellComponentMap[column];
+  if (filter instanceof FilterCell) {
+    const filterText = filter.input.value || filter.input.placeholder;
+    const fixedControlWidth = Array.from(filter.el.children).reduce((total, child) => {
+      if (child === filter.input) return total;
+      return total + child.getBoundingClientRect().width;
+    }, 0);
+    measurements.push(
+      measureTextBox(filter.input, filterText) +
+        fixedControlWidth +
+        horizontalBoxInset(filter.el),
+    );
+  }
+
+  const renderedCell = Object.values(grid.rowComponentMap)
+    .map((row) => row.cellComponentMap[column])
+    .find((cell) => cell !== undefined);
+  const contentElement = renderedCell?.el ?? filter?.el;
+  if (contentElement) {
+    for (const rfq of rfqs) {
+      measurements.push(measureTextBox(contentElement, String(rfqCellValues(rfq)[column] ?? "")));
+    }
+  }
+
+  return fittedWidthFromMeasurements(measurements.map((width) => width + 2));
+}
+
+let measurementCanvas: HTMLCanvasElement | undefined;
+
+function measureTextBox(element: HTMLElement, value: string) {
+  const style = window.getComputedStyle(element);
+  const canvas = measurementCanvas ??= document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return element.scrollWidth;
+  context.font = style.font || `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const letterSpacing = Number.parseFloat(style.letterSpacing);
+  const extraLetterSpacing = Number.isFinite(letterSpacing)
+    ? Math.max(value.length - 1, 0) * letterSpacing
+    : 0;
+  return context.measureText(value).width + extraLetterSpacing + horizontalBoxInset(element);
+}
+
+function horizontalBoxInset(element: HTMLElement) {
+  const style = window.getComputedStyle(element);
+  return cssPixels(style.paddingLeft) + cssPixels(style.paddingRight) + horizontalBorderWidth(element);
+}
+
+function horizontalBorderWidth(element: HTMLElement) {
+  const style = window.getComputedStyle(element);
+  return cssPixels(style.borderLeftWidth) + cssPixels(style.borderRightWidth);
+}
+
+function cssPixels(value: string) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sameWidths(left: number[], right: number[]) {
+  return left.length === right.length && left.every((width, index) => width === right[index]);
 }
 
 function decorateSolicitationCells(grid: Grid, rfqs: Rfq[]) {

@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import type { ApprovedPart, Rfq, RfqDay, RfqListResponse, SyncProgress, SyncStatus } from "../shared/rfq";
 import { FastGrid, type PopoverAnchor } from "./FastGrid";
 import { FilterBuilderPanel, SaveViewPopover } from "./FilterDialogs";
@@ -12,6 +21,8 @@ import {
   type FilterGroup,
   type SavedFilterView,
 } from "./filters";
+import { defaultColumnWidths, normalizeColumnWidths, placeCellPopover } from "./gridLayout";
+import { parseSavedViews, updateSavedViewState } from "./savedViews";
 
 const savedViewsKey = "sales-patriot.saved-filter-views.v1";
 
@@ -31,6 +42,7 @@ export function App() {
   const [globalQuery, setGlobalQuery] = useState("");
   const [filterGroup, setFilterGroup] = useState<FilterGroup>(emptyFilterGroup);
   const [columnFilters, setColumnFilters] = useState<Record<number, string>>({});
+  const [columnWidths, setColumnWidths] = useState(defaultColumnWidths);
   const [savedViews, setSavedViews] = useState<SavedFilterView[]>(loadSavedViews);
   const [activeViewId, setActiveViewId] = useState("all");
   const [builderRequest, setBuilderRequest] = useState<{ field?: FilterField } | null>(null);
@@ -115,19 +127,13 @@ export function App() {
 
   useEffect(() => {
     if (activeViewId === "all") return;
-    setSavedViews((current) =>
-      current.map((view) =>
-        view.id === activeViewId
-          ? {
-              ...view,
-              globalQuery,
-              group: cloneFilterGroup(filterGroup),
-              columnFilters: { ...columnFilters },
-            }
-          : view,
-      ),
-    );
-  }, [activeViewId, globalQuery, filterGroup, columnFilters]);
+    setSavedViews((current) => updateSavedViewState(current, activeViewId, {
+      globalQuery,
+      group: filterGroup,
+      columnFilters,
+      columnWidths,
+    }));
+  }, [activeViewId, globalQuery, filterGroup, columnFilters, columnWidths]);
 
   const tableRfqs = useMemo(
     () => applyRfqFilters(rfqs, globalQuery, filterGroup),
@@ -141,6 +147,7 @@ export function App() {
     setGlobalQuery("");
     setFilterGroup(emptyFilterGroup());
     setColumnFilters({});
+    setColumnWidths(defaultColumnWidths());
     setBuilderRequest(null);
     setSaveViewOpen(false);
     setGridResetVersion((version) => version + 1);
@@ -151,6 +158,7 @@ export function App() {
     setGlobalQuery(view.globalQuery);
     setFilterGroup(cloneFilterGroup(view.group));
     setColumnFilters({ ...view.columnFilters });
+    setColumnWidths(normalizeColumnWidths(view.columnWidths));
     setBuilderRequest(null);
     setSaveViewOpen(false);
     setGridViewVersion((version) => version + 1);
@@ -163,6 +171,7 @@ export function App() {
       globalQuery,
       group: cloneFilterGroup(filterGroup),
       columnFilters: { ...columnFilters },
+      columnWidths: [...columnWidths],
     };
     setSavedViews((current) => [...current, view]);
     setActiveViewId(view.id);
@@ -181,6 +190,7 @@ export function App() {
       globalQuery: view.globalQuery,
       group: cloneFilterGroup(view.group),
       columnFilters: { ...view.columnFilters },
+      columnWidths: [...view.columnWidths],
     };
     setSavedViews((current) => [...current, duplicate]);
     selectSavedView(duplicate);
@@ -341,6 +351,8 @@ export function App() {
                 onFilteredChange={setFilteredRfqs}
                 columnFilters={columnFilters}
                 onColumnFiltersChange={setColumnFilters}
+                columnWidths={columnWidths}
+                onColumnWidthsChange={setColumnWidths}
                 onOpenFilterBuilder={(field) => setBuilderRequest({ field })}
                 resetVersion={gridResetVersion}
                 viewVersion={gridViewVersion}
@@ -388,6 +400,7 @@ function RfqPreviewPopover({
   onOpenFull: () => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const popoverStyle = useCellAttachedPopover(anchor, panelRef, 520);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => event.key === "Escape" && onClose();
@@ -402,10 +415,6 @@ function RfqPreviewPopover({
     };
   }, [onClose]);
 
-  const width = Math.min(520, window.innerWidth - 16);
-  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
-  const placeAbove = anchor.bottom + 330 > window.innerHeight;
-  const top = placeAbove ? Math.max(8, anchor.top - 324) : anchor.bottom + 3;
   const fieldLabel = fieldDefinitions.find((definition) => definition.key === field)?.label ?? "Detail";
   const summaryDetails = [
     { field: "nsn" as const, label: "NSN", value: rfq.nsn },
@@ -425,7 +434,7 @@ function RfqPreviewPopover({
       className="rfq-preview-popover"
       role="dialog"
       aria-label={`${fieldLabel} for ${rfq.solicitationNumber}`}
-      style={{ width, left, top }}
+      style={popoverStyle}
     >
       <header className="rfq-preview-head">
         <div>
@@ -475,6 +484,7 @@ function ApprovedPartsPopover({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const popoverStyle = useCellAttachedPopover(anchor, panelRef, 650);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -508,18 +518,13 @@ function ApprovedPartsPopover({
     };
   }, [onClose]);
 
-  const width = Math.min(650, window.innerWidth - 16);
-  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
-  const placeAbove = anchor.bottom + 400 > window.innerHeight;
-  const top = placeAbove ? Math.max(8, anchor.top - 394) : anchor.bottom + 3;
-
   return (
       <section
         ref={panelRef}
         className="approved-parts-popover"
         role="dialog"
         aria-labelledby="parts-title"
-        style={{ width, left, top }}
+        style={popoverStyle}
       >
         <div className="parts-modal-head">
           <div>
@@ -567,6 +572,70 @@ function ApprovedPartsPopover({
         </div>
       </section>
   );
+}
+
+function useCellAttachedPopover(
+  anchor: PopoverAnchor,
+  panelRef: RefObject<HTMLElement | null>,
+  preferredWidth: number,
+) {
+  const [style, setStyle] = useState<CSSProperties>({
+    left: 0,
+    top: 0,
+    visibility: "hidden",
+  });
+
+  useLayoutEffect(() => {
+    let animationFrame = 0;
+    const update = () => {
+      const panel = panelRef.current;
+      if (!panel || !anchor.element.isConnected) {
+        setStyle((current) => current.visibility === "hidden" ? current : { ...current, visibility: "hidden" });
+        return;
+      }
+
+      const width = Math.min(preferredWidth, Math.max(window.innerWidth - 16, 0));
+      panel.style.width = `${width}px`;
+      const overlay = panel.getBoundingClientRect();
+      const position = placeCellPopover(
+        anchor.element.getBoundingClientRect(),
+        { width: overlay.width, height: overlay.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      const next: CSSProperties = {
+        width,
+        left: position.left,
+        top: position.top,
+        visibility: "visible",
+      };
+      setStyle((current) => samePopoverStyle(current, next) ? current : next);
+    };
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(update);
+    };
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    if (panelRef.current) resizeObserver.observe(panelRef.current);
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+    window.addEventListener("fast-grid-positionchange", scheduleUpdate);
+    update();
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      window.removeEventListener("fast-grid-positionchange", scheduleUpdate);
+    };
+  }, [anchor, panelRef, preferredWidth]);
+
+  return style;
+}
+
+function samePopoverStyle(left: CSSProperties, right: CSSProperties) {
+  return left.width === right.width && left.left === right.left && left.top === right.top &&
+    left.visibility === right.visibility;
 }
 
 function RfqDrawer({ rfq, onClose }: { rfq: Rfq; onClose: () => void }) {
@@ -703,8 +772,7 @@ function errorMessage(error: unknown) {
 
 function loadSavedViews(): SavedFilterView[] {
   try {
-    const value = JSON.parse(localStorage.getItem(savedViewsKey) ?? "[]");
-    return Array.isArray(value) ? value : [];
+    return parseSavedViews(localStorage.getItem(savedViewsKey));
   } catch {
     return [];
   }

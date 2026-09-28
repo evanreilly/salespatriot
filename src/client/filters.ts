@@ -47,6 +47,7 @@ export type SavedFilterView = {
   globalQuery: string;
   group: FilterGroup;
   columnFilters: Record<number, string>;
+  columnWidths: number[];
 };
 
 type FieldKind = "text" | "number" | "date";
