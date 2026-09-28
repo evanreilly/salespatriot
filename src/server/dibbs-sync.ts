@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { db } from "./db.js";
-import { dibbsDataDir, dibbsTimeZone } from "./config.js";
+import { dibbsDataDir, dibbsPageConcurrency, dibbsTimeZone } from "./config.js";
 import { DibbsClient, hiddenFormFields } from "./dibbs-client.js";
 import {
   hasNextResultsPage,
@@ -171,7 +171,8 @@ export async function scrapeDatedListings(
   const pages = Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => index + 2);
   let completedPages = 1;
   onProgress?.({ phase: "live-scan", current: 1, total: pageCount, message: `Scanning today's DIBBS listings: 1 / ${pageCount} pages` });
-  const results = await concurrentMap(pages, 2, async (page) => {
+  const pageConcurrency = Math.max(1, Math.min(12, dibbsPageConcurrency));
+  const results = await concurrentMap(pages, pageConcurrency, async (page) => {
     const form = new URLSearchParams(hidden);
     form.set("__EVENTTARGET", "ctl00$cph1$grdRfqSearch");
     form.set("__EVENTARGUMENT", `Page$${page}`);

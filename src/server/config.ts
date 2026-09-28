@@ -10,4 +10,5 @@ export const dibbsSyncEnabled = process.env.DIBBS_SYNC_ENABLED !== "false";
 export const dibbsTodayIntervalMinutes = Number(process.env.DIBBS_TODAY_INTERVAL_MINUTES ?? 15);
 export const dibbsArchiveIntervalMinutes = Number(process.env.DIBBS_ARCHIVE_INTERVAL_MINUTES ?? 360);
 export const dibbsArchiveDays = Number(process.env.DIBBS_ARCHIVE_DAYS ?? 7);
+export const dibbsPageConcurrency = Number(process.env.DIBBS_PAGE_CONCURRENCY ?? 6);
 export const dibbsTimeZone = process.env.DIBBS_TIME_ZONE ?? "America/New_York";

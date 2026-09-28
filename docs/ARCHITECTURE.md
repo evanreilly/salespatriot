@@ -55,7 +55,7 @@ DIBBS does not expose the completed files while a day is still changing. For tha
 
 1. accepts the DOD consent screen and retains cookies independently per DIBBS host;
 2. searches the portal for the current Eastern Time date;
-3. follows ASP.NET GridView postback pages and extracts solicitation, NSN, title, and PDF URL;
+3. follows ASP.NET GridView postback pages with bounded parallelism (six concurrent pages by default) and extracts solicitation, NSN, title, and PDF URL;
 4. compares solicitation numbers with SQLite and downloads only unseen PDFs;
 5. converts those PDFs with the same parser and upserts them transactionally.
 
