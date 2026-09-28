@@ -60,7 +60,7 @@ DIBBS does not expose the completed files while a day is still changing. For tha
 5. compares solicitation numbers with locally downloaded documents and fetches only missing PDFs;
 6. converts those PDFs with the same parser and upserts them in 20-document transactions, allowing richer fields to appear during a long run and a restarted process to resume from durable progress.
 
-When the next completed archive appears, its import replaces that date's live rows and removes the temporary live-document directory. HTTP requests have a 30-second deadline, transient server responses are retried, and only one scheduled or button-triggered synchronization may run at once.
+When the next completed archive appears, its import replaces that date's live rows and removes the temporary live-document directory. Portal requests have a 30-second deadline, large atomic file transfers have a 30-minute deadline, transient server responses are retried, and only one scheduled or button-triggered synchronization may run at once.
 
 ## Archive ingestion
 

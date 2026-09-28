@@ -94,7 +94,9 @@ export function FastGrid({
       onColumnWidthsChangeRef.current([...nextWidths]);
     };
     const fitColumn = (column: number) => {
-      setColumnWidth(column, measureFittedColumnWidth(grid, column, recordsRef.current));
+      const fittedWidth = measureFittedColumnWidth(grid, column, recordsRef.current);
+      const currentWidth = columnWidthsRef.current[column] ?? DEFAULT_COLUMN_WIDTH;
+      setColumnWidth(column, currentWidth === fittedWidth ? DEFAULT_COLUMN_WIDTH : fittedWidth);
     };
     const startColumnResize = (event: MouseEvent, column: number) => {
       event.preventDefault();
@@ -305,7 +307,7 @@ function decorateHeaderCells(
     button.dataset.column = String(candidate.id);
     const title = headers[candidate.id] ?? "Column";
     if (button.textContent !== title) button.textContent = title;
-    button.title = "Click to fit this column's content";
+    button.title = "Click to fit this column's content; click again to restore the standard width";
     const resizeHandle = candidate.el.querySelector<HTMLElement>(".column-resize-handle");
     if (resizeHandle) resizeHandle.dataset.column = String(candidate.id);
   }
