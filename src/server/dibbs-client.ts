@@ -35,7 +35,7 @@ export class DibbsClient {
     if (!force && fs.existsSync(destination) && fs.statSync(destination).size > 0) return;
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     const temporaryPath = `${destination}.part`;
-    const response = await this.request(url);
+    const response = await this.request(url, {}, 30 * 60_000);
     if (!response.ok || !response.body) {
       throw new Error(`DIBBS returned ${response.status} for ${url}`);
     }
@@ -65,8 +65,8 @@ export class DibbsClient {
     }
   }
 
-  async request(url: string, init: RequestInit = {}): Promise<Response> {
-    let response = await this.fetchFollowingRedirects(url, init);
+  async request(url: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<Response> {
+    let response = await this.fetchFollowingRedirects(url, init, 0, timeoutMs);
     if (await isConsentPage(response)) {
       const origin = new URL(response.url).origin;
       let lock = this.consentLocks.get(origin);
@@ -75,7 +75,7 @@ export class DibbsClient {
         this.consentLocks.set(origin, lock);
       }
       await lock;
-      response = await this.fetchFollowingRedirects(url, init);
+      response = await this.fetchFollowingRedirects(url, init, 0, timeoutMs);
     }
     return response;
   }
@@ -93,7 +93,12 @@ export class DibbsClient {
     });
   }
 
-  private async fetchFollowingRedirects(url: string, init: RequestInit, redirects = 0): Promise<Response> {
+  private async fetchFollowingRedirects(
+    url: string,
+    init: RequestInit,
+    redirects = 0,
+    timeoutMs = 30_000,
+  ): Promise<Response> {
     if (redirects > 8) throw new Error(`Too many redirects while fetching ${url}`);
     const target = new URL(url);
     const headers = new Headers(init.headers);
@@ -104,7 +109,7 @@ export class DibbsClient {
 
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const timeout = AbortSignal.timeout(30_000);
+      const timeout = AbortSignal.timeout(timeoutMs);
       const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
       try {
         response = await fetch(target, { ...init, headers, signal, redirect: "manual" });
@@ -124,7 +129,7 @@ export class DibbsClient {
     if (location && response.status >= 300 && response.status < 400) {
       const nextUrl = new URL(location, target).toString();
       const nextInit = response.status === 307 || response.status === 308 ? init : { method: "GET" };
-      return this.fetchFollowingRedirects(nextUrl, nextInit, redirects + 1);
+      return this.fetchFollowingRedirects(nextUrl, nextInit, redirects + 1, timeoutMs);
     }
     return response;
   }
