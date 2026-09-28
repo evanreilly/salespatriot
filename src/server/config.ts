@@ -7,7 +7,7 @@ export const databasePath =
 export const port = Number(process.env.PORT ?? 3001);
 export const dibbsDataDir = process.env.DIBBS_DATA_DIR ?? path.join(dataDir, "dibbs");
 export const dibbsSyncEnabled = process.env.DIBBS_SYNC_ENABLED !== "false";
-export const dibbsTodayIntervalMinutes = Number(process.env.DIBBS_TODAY_INTERVAL_MINUTES ?? 15);
+export const dibbsTodayIntervalMinutes = Number(process.env.DIBBS_TODAY_INTERVAL_MINUTES ?? 60);
 export const dibbsArchiveIntervalMinutes = Number(process.env.DIBBS_ARCHIVE_INTERVAL_MINUTES ?? 360);
 export const dibbsArchiveDays = Number(process.env.DIBBS_ARCHIVE_DAYS ?? 7);
 export const dibbsPageConcurrency = Number(process.env.DIBBS_PAGE_CONCURRENCY ?? 6);

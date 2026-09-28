@@ -3,8 +3,9 @@ import {
   dibbsSyncEnabled,
   dibbsTodayIntervalMinutes,
 } from "./config.js";
-import { syncPublishedArchives, syncToday } from "./dibbs-sync.js";
+import { currentDibbsDate, syncPublishedArchives, syncToday } from "./dibbs-sync.js";
 import { runSyncExclusive } from "./sync-lock.js";
+import { db } from "./db.js";
 
 export function startDibbsScheduler() {
   if (!dibbsSyncEnabled) {
@@ -24,8 +25,13 @@ export function startDibbsScheduler() {
 }
 
 async function runLive() {
+  const date = currentDibbsDate();
+  if (hasFreshLiveSync(date)) {
+    console.log(`DIBBS live sync is current for ${date}; skipping scheduled check`);
+    return;
+  }
   await runSyncExclusive("Scheduled current-day sync", async (report) => {
-    const result = await syncToday({ onProgress: report });
+    const result = await syncToday({ date, onProgress: report });
     console.log(
       `DIBBS live sync: ${result.imported} new, ${result.skipped} known, ${result.failures} failed`,
     );
@@ -52,4 +58,18 @@ async function runStartupCycle() {
 
 function minutes(value: number) {
   return Math.max(1, Number.isFinite(value) ? value : 1) * 60_000;
+}
+
+function hasFreshLiveSync(date: string) {
+  const freshness = `-${Math.max(1, dibbsTodayIntervalMinutes)} minutes`;
+  return Boolean(
+    db.prepare(
+      `SELECT 1
+       FROM sync_runs
+       WHERE sync_type = 'live' AND target_date = ? AND status = 'complete'
+         AND completed_at >= datetime('now', ?)
+       ORDER BY completed_at DESC
+       LIMIT 1`,
+    ).get(date, freshness),
+  );
 }

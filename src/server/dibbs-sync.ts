@@ -95,7 +95,7 @@ export async function syncToday(options: {
   onProgress?: (update: SyncProgressUpdate) => void;
 } = {}): Promise<SyncSummary> {
   const client = options.client ?? new DibbsClient();
-  const date = options.date ?? dateInTimeZone(new Date(), dibbsTimeZone);
+  const date = options.date ?? currentDibbsDate();
   const sourceUrl = liveResultsUrl(date);
   const runId = startSyncRun("live", date);
   try {
@@ -109,43 +109,50 @@ export async function syncToday(options: {
     fs.mkdirSync(liveDir, { recursive: true });
     let failures = 0;
     let completed = 0;
+    let imported = 0;
+    const batchSize = 20;
 
-    const records = await concurrentMap(selected, 4, async (listing) => {
-      const filename = safeRemoteFilename(listing.pdfUrl, listing.solicitationNumber);
-      const pdfPath = path.join(liveDir, filename);
-      try {
-        await client.download(listing.pdfUrl, pdfPath, options.force);
-        return await ingestLivePdf({ pdfPath, fallback: listing });
-      } catch (error) {
-        failures += 1;
-        console.warn(`Could not ingest ${listing.solicitationNumber}: ${errorMessage(error)}`);
-        return null;
-      } finally {
-        completed += 1;
-        options.onProgress?.({
-          phase: "live-download",
-          current: completed,
-          total: selected.length || 1,
-          message: `Downloading new RFQs: ${completed.toLocaleString()} / ${selected.length.toLocaleString()}`,
-        });
-        if (completed % 50 === 0 || completed === selected.length) {
-          console.log(`Ingested ${completed.toLocaleString()} / ${selected.length.toLocaleString()} new live PDFs`);
+    for (let offset = 0; offset < selected.length; offset += batchSize) {
+      const batch = selected.slice(offset, offset + batchSize);
+      const records = await concurrentMap(batch, 4, async (listing) => {
+        const filename = safeRemoteFilename(listing.pdfUrl, listing.solicitationNumber);
+        const pdfPath = path.join(liveDir, filename);
+        try {
+          await client.download(listing.pdfUrl, pdfPath, options.force);
+          return await ingestLivePdf({ pdfPath, fallback: listing });
+        } catch (error) {
+          failures += 1;
+          console.warn(`Could not ingest ${listing.solicitationNumber}: ${errorMessage(error)}`);
+          return null;
+        } finally {
+          completed += 1;
+          options.onProgress?.({
+            phase: "live-download",
+            current: completed,
+            total: selected.length || 1,
+            message: `Downloading new RFQs: ${completed.toLocaleString()} / ${selected.length.toLocaleString()}`,
+          });
+          if (completed % 50 === 0 || completed === selected.length) {
+            console.log(`Ingested ${completed.toLocaleString()} / ${selected.length.toLocaleString()} new live PDFs`);
+          }
         }
+      });
+      const usableRecords = records.filter((record) => record !== null);
+      if (usableRecords.length) {
+        saveLiveRecords({ archiveDate: date, sourcePath: liveDir, sourceUrl, records: usableRecords });
+        imported += usableRecords.length;
       }
-    });
-    const usableRecords = records.filter((record) => record !== null);
-    if (usableRecords.length) {
-      saveLiveRecords({ archiveDate: date, sourcePath: liveDir, sourceUrl, records: usableRecords });
-    } else {
+    }
+    if (imported === 0) {
       touchLiveImport(date, liveDir, sourceUrl);
     }
     const summary: SyncSummary = {
       discovered: listings.length,
-      imported: usableRecords.length,
+      imported,
       skipped: listings.length - unseen.length,
       failures,
     };
-    finishSyncRun(runId, failures ? "partial" : "complete", usableRecords.length, failures, undefined, listings.length);
+    finishSyncRun(runId, failures ? "partial" : "complete", imported, failures, undefined, listings.length);
     return summary;
   } catch (error) {
     finishSyncRun(runId, "failed", 0, 1, errorMessage(error));
@@ -271,6 +278,10 @@ function dateInTimeZone(date: Date, timeZone: string) {
   }).formatToParts(date);
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${value.year}-${value.month}-${value.day}`;
+}
+
+export function currentDibbsDate() {
+  return dateInTimeZone(new Date(), dibbsTimeZone);
 }
 
 function safeRemoteFilename(url: string, solicitationNumber: string) {

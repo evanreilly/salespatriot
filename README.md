@@ -35,9 +35,9 @@ npm run import -- /path/to/archive.zip --date 2026-09-27
 
 ## DIBBS synchronization
 
-The API starts an incremental synchronizer by default. It checks the current DIBBS day every 15 minutes and the completed-archive listing every six hours. Automatic checks never replace a completed archive day:
+The API starts an incremental synchronizer by default. It checks the current DIBBS day at most once an hour and the completed-archive listing every six hours. A fresh completed sync in SQLite suppresses redundant startup work, while an interrupted live run resumes from solicitation numbers already committed in small batches. Automatic checks never replace a completed archive day:
 
-- current-day searches download and insert only solicitation numbers not already stored;
+- current-day searches download and insert only solicitation numbers not already stored, committing every 20 documents so the grid updates during a long run;
 - completed archives are skipped once their PDF ZIP, fixed-width index, and batch ZIP have been successfully ingested;
 - the explicit **Re-sync** button is the only automatic path that re-downloads and replaces an existing day.
 
