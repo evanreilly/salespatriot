@@ -32,7 +32,7 @@ export function App() {
   const [toDate, setToDate] = useState("");
   const [rfqs, setRfqs] = useState<Rfq[]>([]);
   const [filteredRfqs, setFilteredRfqs] = useState<Rfq[]>([]);
-  const [selectedRfq, setSelectedRfq] = useState<Rfq | null>(null);
+  const [fullDetails, setFullDetails] = useState<{ rfq: Rfq; anchor: PopoverAnchor } | null>(null);
   const [partsPopover, setPartsPopover] = useState<{ rfq: Rfq; anchor: PopoverAnchor } | null>(null);
   const [previewPopover, setPreviewPopover] = useState<{
     rfq: Rfq;
@@ -105,7 +105,7 @@ export function App() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    setSelectedRfq(null);
+    setFullDetails(null);
     setPartsPopover(null);
     setPreviewPopover(null);
     setFilteredRfqs([]);
@@ -362,7 +362,13 @@ export function App() {
         </section>
       </main>
 
-      {selectedRfq && <RfqDrawer rfq={selectedRfq} onClose={() => setSelectedRfq(null)} />}
+      {fullDetails && (
+        <RfqDetailsPanel
+          rfq={fullDetails.rfq}
+          anchor={fullDetails.anchor}
+          onClose={() => setFullDetails(null)}
+        />
+      )}
       {previewPopover && (
         <RfqPreviewPopover
           rfq={previewPopover.rfq}
@@ -370,7 +376,7 @@ export function App() {
           field={previewPopover.field}
           onClose={() => setPreviewPopover(null)}
           onOpenFull={() => {
-            setSelectedRfq(previewPopover.rfq);
+            setFullDetails({ rfq: previewPopover.rfq, anchor: previewPopover.anchor });
             setPreviewPopover(null);
           }}
         />
@@ -638,53 +644,107 @@ function samePopoverStyle(left: CSSProperties, right: CSSProperties) {
     left.visibility === right.visibility;
 }
 
-function RfqDrawer({ rfq, onClose }: { rfq: Rfq; onClose: () => void }) {
+function RfqDetailsPanel({
+  rfq,
+  anchor,
+  onClose,
+}: {
+  rfq: Rfq;
+  anchor: PopoverAnchor;
+  onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLElement>(null);
+  const popoverStyle = useCellAttachedPopover(anchor, panelRef, 610);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !panelRef.current?.contains(event.target)) onClose();
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [onClose]);
 
   return (
-    <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={rfq.solicitationNumber}>
-      <button className="drawer-scrim" onClick={onClose} aria-label="Close details" />
-      <aside className="drawer">
-        <div className="drawer-head">
-          <div>
-            <p className="eyebrow">{rfq.solicitationNumber}</p>
-            <h2>{rfq.title}</h2>
-          </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close details">×</button>
+    <aside
+      ref={panelRef}
+      className="full-details-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="full-details-title"
+      style={popoverStyle}
+    >
+      <header className="full-details-head">
+        <div>
+          <span>RFQ details</span>
+          <strong id="full-details-title">{rfq.solicitationNumber}</strong>
         </div>
-        <div className="detail-grid">
-          <Detail label="NSN" value={rfq.nsn} />
-          <Detail label="Purchase request" value={rfq.purchaseRequest} />
-          <Detail label="Quantity" value={rfq.quantity === null ? null : `${rfq.quantity.toLocaleString()} ${rfq.unit ?? ""}`} />
-          <Detail label="NAICS" value={rfq.naics} />
-          <Detail label="Issued" value={formatLongDate(rfq.issuedDate)} />
-          <Detail label="Closes" value={formatLongDate(rfq.closeDate)} />
-          <Detail label="Delivery" value={rfq.deliveryDays === null ? null : `${rfq.deliveryDays} days`} />
-          <Detail label="Buyer" value={rfq.buyerName} />
-          <Detail label="Buyer email" value={rfq.buyerEmail} />
-          <Detail label="Supply chain" value={rfq.supplyChain ?? rfq.agency} wide />
-        </div>
-        <a className="pdf-button" href={`/api/rfqs/${rfq.id}/pdf`} target="_blank" rel="noreferrer">
-          Open source PDF
-          <ArrowUpRight />
+        <button className="popover-close-button" onClick={onClose} aria-label="Close details">×</button>
+      </header>
+
+      <section className="full-details-description">
+        <span>Item description</span>
+        <strong>{rfq.title}</strong>
+      </section>
+
+      <div className="full-details-table-wrap">
+        <table className="full-details-table">
+          <tbody>
+            <SpecRow label="NSN" value={rfq.nsn} secondLabel="Purchase request" secondValue={rfq.purchaseRequest} />
+            <SpecRow
+              label="Quantity"
+              value={rfq.quantity === null ? null : rfq.quantity.toLocaleString()}
+              secondLabel="Unit"
+              secondValue={rfq.unit}
+            />
+            <SpecRow label="Issued" value={formatLongDate(rfq.issuedDate)} secondLabel="Closes" secondValue={formatLongDate(rfq.closeDate)} />
+            <SpecRow
+              label="Delivery"
+              value={rfq.deliveryDays === null ? null : `${rfq.deliveryDays} days`}
+              secondLabel="NAICS"
+              secondValue={rfq.naics}
+            />
+            <SpecRow
+              label="Est. unit cost"
+              value={formatCurrency(rfq.estimatedUnitPrice)}
+              secondLabel="Est. bid value"
+              secondValue={formatCurrency(rfq.estimatedValue)}
+            />
+            <SpecRow label="Buyer" value={rfq.buyerName} secondLabel="Buyer code" secondValue={rfq.buyerCode} />
+            <tr className="full-details-wide-row"><th>Buyer email</th><td colSpan={3}>{rfq.buyerEmail || "—"}</td></tr>
+            <SpecRow label="Supply chain" value={rfq.supplyChain} secondLabel="Agency" secondValue={rfq.agency} />
+            <SpecRow label="Archive date" value={rfq.archiveDate} secondLabel="Source size" secondValue={formatBytes(rfq.fileSize)} />
+            <tr className="full-details-wide-row"><th>Source file</th><td colSpan={3}>{rfq.filename}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <footer className="full-details-foot">
+        <span>Updated {formatCompactTimestamp(rfq.updatedAt)}</span>
+        <a href={`/api/rfqs/${rfq.id}/pdf`} target="_blank" rel="noreferrer">
+          Open source PDF <ArrowUpRight />
         </a>
-        <p className="source-note">Source: {rfq.filename} · {formatBytes(rfq.fileSize)}</p>
-      </aside>
-    </div>
+      </footer>
+    </aside>
   );
 }
 
-function Detail({ label, value, wide = false }: { label: string; value: string | null; wide?: boolean }) {
-  return (
-    <div className={wide ? "detail wide" : "detail"}>
-      <span>{label}</span>
-      <strong>{value || "—"}</strong>
-    </div>
-  );
+function SpecRow({
+  label,
+  value,
+  secondLabel,
+  secondValue,
+}: {
+  label: string;
+  value: string | null;
+  secondLabel: string;
+  secondValue: string | null;
+}) {
+  return <tr><th>{label}</th><td>{value || "—"}</td><th>{secondLabel}</th><td>{secondValue || "—"}</td></tr>;
 }
 
 function ArrowUpRight() {
@@ -732,6 +792,10 @@ function formatMillions(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}M`;
+}
+
+function formatCurrency(value: number | null) {
+  return value === null ? null : value.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 function formatCompactTimestamp(value: string) {

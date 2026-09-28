@@ -200,7 +200,7 @@ sequenceDiagram
     ZIP-->>Browser: Stream application/pdf
 ```
 
-In the grid, clicking an NSN opens the approved-parts dialog. Clicking another cell opens the broader RFQ details drawer, while the document icon beside a solicitation opens its source PDF directly.
+In the grid, clicking an NSN opens the approved-parts dialog. Clicking another cell opens a compact RFQ specification panel styled like the grid, while the document icon beside a solicitation opens its source PDF directly.
 
 ## Filtering and saved views
 
