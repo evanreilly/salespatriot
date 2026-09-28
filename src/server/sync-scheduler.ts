@@ -1,4 +1,5 @@
 import {
+  dibbsArchiveDays,
   dibbsArchiveIntervalMinutes,
   dibbsSyncEnabled,
   dibbsTodayIntervalMinutes,
@@ -42,7 +43,7 @@ async function runLive() {
 
 async function runArchives() {
   await runSyncExclusive("Scheduled archive check", async (report) => {
-    const result = await syncPublishedArchives({ limit: 1, onProgress: report });
+    const result = await syncPublishedArchives({ limit: dibbsArchiveDays, onProgress: report });
     console.log(
       `DIBBS archive sync: ${result.imported} RFQs imported, ${result.skipped} days current, ${result.failures} failed`,
     );

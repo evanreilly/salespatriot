@@ -56,8 +56,9 @@ DIBBS does not expose the completed files while a day is still changing. For tha
 1. accepts the DOD consent screen and retains cookies independently per DIBBS host;
 2. searches the portal for the current Eastern Time date;
 3. follows ASP.NET GridView postback pages with bounded parallelism (six concurrent pages by default) and extracts solicitation, NSN, title, and PDF URL;
-4. compares solicitation numbers with SQLite and downloads only unseen PDFs;
-5. converts those PDFs with the same parser and upserts them in 20-document transactions, allowing the polling grid to gain rows during a long run and a restarted process to resume from durable progress.
+4. stages each scraped result page in SQLite immediately, with the original DIBBS PDF URL as a temporary document target, so the polling grid gains rows during portal discovery;
+5. compares solicitation numbers with locally downloaded documents and fetches only missing PDFs;
+6. converts those PDFs with the same parser and upserts them in 20-document transactions, allowing richer fields to appear during a long run and a restarted process to resume from durable progress.
 
 When the next completed archive appears, its import replaces that date's live rows and removes the temporary live-document directory. HTTP requests have a 30-second deadline, transient server responses are retried, and only one scheduled or button-triggered synchronization may run at once.
 
@@ -232,6 +233,6 @@ The Boolean builder expands to the table width and shifts the grid down while it
 
 ## Scheduling and stability
 
-The API process runs a single-flight scheduler. The live check defaults to hourly; archive discovery defaults to every six hours. Startup checks SQLite first and skips the live scrape when that date has a successful sync newer than the configured interval. A routine archive check imports only a missing completed day, and a routine live check downloads only unseen solicitations. If the process stops mid-run, completed 20-document batches remain durable and the next due run resumes with the missing solicitation numbers. Historical data therefore stays stable, and refreshing the browser never starts a job.
+The API process runs a single-flight scheduler. The live check defaults to hourly; archive discovery defaults to every six hours and examines the latest seven completed days. Startup checks SQLite first and skips the live scrape when that date has a successful sync newer than the configured interval. A routine archive check skips each finalized day, and a routine live check downloads only PDFs not already local. If the process stops mid-run, staged rows and completed 20-document batches remain durable and the next due run resumes with the missing documents. Historical data therefore stays stable, and refreshing the browser never starts a job.
 
 `Sync latest` checks the latest seven published archive dates, skips those already complete, and then invokes the current-day operation. `Re-sync` is deliberately separate and explicit: it re-downloads and replaces only the newest stored day inside the toolbar's current range. The active operation publishes phase/current/total progress in memory for the toolbar, while every attempt is recorded in `sync_runs`; the latest completed run feeds the “Last synced” reading.

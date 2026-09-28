@@ -37,11 +37,11 @@ npm run import -- /path/to/archive.zip --date 2026-09-27
 
 The API starts an incremental synchronizer by default. It checks the current DIBBS day at most once an hour and the completed-archive listing every six hours. A fresh completed sync in SQLite suppresses redundant startup work, while an interrupted live run resumes from solicitation numbers already committed in small batches. Automatic checks never replace a completed archive day:
 
-- current-day searches download and insert only solicitation numbers not already stored, committing every 20 documents so the grid updates during a long run;
+- current-day searches stage each result page immediately, then download only PDFs not already local and commit enriched records every 20 documents so the grid updates throughout a long run;
 - completed archives are skipped once their PDF ZIP, fixed-width index, and batch ZIP have been successfully ingested;
 - the explicit **Re-sync** button is the only automatic path that re-downloads and replaces an existing day.
 
-The toolbar defaults to all stored dates. `From` and `To` are optional bounds. **Sync latest** fills any missing archives from the latest seven completed days and then checks today. A progress row reports the current archive download, PDF parsing, live-page scan, or live-PDF download. **Re-sync** refreshes only the newest stored day inside the current range. The toolbar also reports the most recently completed sync.
+The toolbar defaults to all stored dates. `From` and `To` are optional bounds. Both the scheduled archive pass and **Sync latest** fill any missing archives from the latest seven completed days, skipping finalized days, and then check today. A progress row reports the current archive download, PDF parsing, live-page scan, or live-PDF download. **Re-sync** refreshes only the newest stored day inside the current range. The toolbar also reports the most recently completed sync.
 
 Manual equivalents are available for operations and debugging:
 

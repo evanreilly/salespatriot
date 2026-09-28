@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { db } from "./db.js";
-import { enrichManifestFromBatch, parseIndexFile, type ManifestRfq } from "./dibbs-formats.js";
+import { enrichManifestFromBatch, parseIndexFile, type DibbsLiveListing, type ManifestRfq } from "./dibbs-formats.js";
 import { parseRfqText, type ParsedRfq } from "./parse-rfq.js";
 import type { SyncProgressUpdate } from "./sync-lock.js";
 
@@ -198,6 +198,31 @@ export function existingSolicitations(solicitations: string[]) {
     .prepare(`SELECT solicitation_number FROM rfqs WHERE solicitation_number IN (${placeholders})`)
     .all(...solicitations) as { solicitation_number: string }[];
   return new Set(rows.map((row) => row.solicitation_number));
+}
+
+export function existingDownloadedSolicitations(solicitations: string[]) {
+  if (solicitations.length === 0) return new Set<string>();
+  const placeholders = solicitations.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT solicitation_number
+       FROM rfqs
+       WHERE solicitation_number IN (${placeholders})
+         AND archive_path <> '' AND archive_path NOT LIKE 'http%'`,
+    )
+    .all(...solicitations) as { solicitation_number: string }[];
+  return new Set(rows.map((row) => row.solicitation_number));
+}
+
+export function createLivePlaceholder(listing: DibbsLiveListing): StoredRfq {
+  return {
+    ...emptyParsedRfq(listing.solicitationNumber, listing.title),
+    nsn: listing.nsn,
+    filename: path.basename(new URL(listing.pdfUrl).pathname),
+    archiveEntry: "",
+    fileSize: 0,
+    documentPath: listing.pdfUrl,
+  };
 }
 
 async function loadManifest(indexPath?: string, batchPath?: string) {

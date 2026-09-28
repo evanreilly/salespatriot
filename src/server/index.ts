@@ -296,6 +296,10 @@ app.get("/api/rfqs/:id/pdf", (request, response) => {
     response.status(404).json({ error: "RFQ not found" });
     return;
   }
+  if (/^https:\/\/dibbs2\.bsm\.dla\.mil\/Downloads\/RFQ\/[^\s]+\.PDF$/i.test(row.archive_path)) {
+    response.redirect(row.archive_path);
+    return;
+  }
   if (!row.archive_path || !fs.existsSync(row.archive_path)) {
     response.status(404).json({ error: "Source archive is unavailable" });
     return;

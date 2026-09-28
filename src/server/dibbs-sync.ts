@@ -13,7 +13,9 @@ import {
 } from "./dibbs-formats.js";
 import {
   concurrentMap,
+  createLivePlaceholder,
   existingArchiveSource,
+  existingDownloadedSolicitations,
   existingSolicitations,
   hasCompleteArchive,
   ingestArchive,
@@ -97,16 +99,30 @@ export async function syncToday(options: {
   const client = options.client ?? new DibbsClient();
   const date = options.date ?? currentDibbsDate();
   const sourceUrl = liveResultsUrl(date);
+  const liveDir = path.join(dibbsDataDir, "live", date);
+  fs.mkdirSync(liveDir, { recursive: true });
   const runId = startSyncRun("live", date);
   try {
-    const listings = await scrapeDatedListings(client, date, options.onProgress);
-    const existing = existingSolicitations(listings.map((listing) => listing.solicitationNumber));
+    const stageListings = (page: DibbsLiveListing[]) => {
+      const known = existingSolicitations(page.map((listing) => listing.solicitationNumber));
+      const fresh = page.filter((listing) => !known.has(listing.solicitationNumber));
+      if (fresh.length) {
+        saveLiveRecords({
+          archiveDate: date,
+          sourcePath: liveDir,
+          sourceUrl,
+          records: fresh.map(createLivePlaceholder),
+        });
+      }
+    };
+    const listings = await scrapeDatedListings(client, date, options.onProgress, stageListings);
+    const existing = existingDownloadedSolicitations(
+      listings.map((listing) => listing.solicitationNumber),
+    );
     const unseen = options.force
       ? listings
       : listings.filter((listing) => !existing.has(listing.solicitationNumber));
     const selected = options.maxNew === undefined ? unseen : unseen.slice(0, options.maxNew);
-    const liveDir = path.join(dibbsDataDir, "live", date);
-    fs.mkdirSync(liveDir, { recursive: true });
     let failures = 0;
     let completed = 0;
     let imported = 0;
@@ -164,11 +180,13 @@ export async function scrapeDatedListings(
   client: DibbsClient,
   date: string,
   onProgress?: (update: SyncProgressUpdate) => void,
+  onListings?: (listings: DibbsLiveListing[]) => void,
 ) {
   const url = liveResultsUrl(date);
   const html = await client.getText(url);
   const listings = new Map<string, DibbsLiveListing>();
   const firstPage = parseLiveListings(html);
+  onListings?.(firstPage);
   for (const listing of firstPage) listings.set(listing.solicitationNumber, listing);
   const recordCount = parseResultCount(html);
   const pageCount = recordCount && firstPage.length
@@ -194,7 +212,9 @@ export async function scrapeDatedListings(
     if (page % 10 === 0 || page === pageCount) {
       console.log(`Scanned DIBBS result page ${page} / ${pageCount}`);
     }
-    return parseLiveListings(pageHtml);
+    const pageListings = parseLiveListings(pageHtml);
+    onListings?.(pageListings);
+    return pageListings;
   });
   for (const page of results) {
     for (const listing of page) listings.set(listing.solicitationNumber, listing);
