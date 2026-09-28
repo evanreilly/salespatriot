@@ -1,0 +1,41 @@
+{
+  "name": "sales-patriot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "build": "npm run typecheck && vite build && tsup src/server/index.ts --format esm --platform node --out-dir dist-server --external better-sqlite3",
+    "start": "node dist-server/index.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "import": "tsx src/server/import-rfqs.ts",
+    "sync": "tsx src/server/sync-rfqs.ts",
+    "sync:today": "tsx src/server/sync-rfqs.ts --today-only"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "express": "^5.1.0",
+    "fast-grid": "github:gabrielpetersson/fast-grid#21a7ee23c87e6c027361f0aab3dbc29d32df630b",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.20.6",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7"
+  }
+}
