@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Rfq } from "../shared/rfq.js";
 import { layoutBuyerTreemap } from "./BuyerTreemap.js";
-import { buildBuyerInsights, seededRelationship, spendTier } from "./buyerInsights.js";
+import { bidSizeTier, buildBuyerInsights, seededRelationship, spendTier } from "./buyerInsights.js";
 
 const rows = [
   { buyerName: "Avery", closeDate: "2026-10-02", estimatedValue: 60_000 },
@@ -22,6 +22,13 @@ test("buyer insights include only open solicitation value", () => {
 test("relationship demo data is deterministic and spend tiers are bounded", () => {
   assert.equal(seededRelationship("Avery"), seededRelationship("Avery"));
   assert.deepEqual([0, 49_999, 50_000, 250_000, 1_000_000].map(spendTier), [0, 1, 2, 3, 4]);
+});
+
+test("individual bid-size tiers resolve the RFQ value distribution", () => {
+  assert.deepEqual(
+    [0, 999, 1_000, 4_999, 5_000, 24_999, 25_000].map(bidSizeTier),
+    [0, 1, 2, 2, 3, 3, 4],
+  );
 });
 
 test("buyer treemap preserves all valued buyers and the full area", () => {

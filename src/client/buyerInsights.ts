@@ -43,6 +43,14 @@ export function spendTier(value: number): BuyerInsight["spendTier"] {
   return 4;
 }
 
+export function bidSizeTier(value: number): BuyerInsight["spendTier"] {
+  if (value <= 0) return 0;
+  if (value < 1_000) return 1;
+  if (value < 5_000) return 2;
+  if (value < 25_000) return 3;
+  return 4;
+}
+
 export function spendTierLabel(tier: BuyerInsight["spendTier"]) {
   return tier === 0 ? "" : "$".repeat(tier);
 }

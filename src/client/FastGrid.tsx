@@ -1,7 +1,7 @@
 import { FilterCell, Grid, HeaderCell } from "fast-grid";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { Rfq } from "../shared/rfq";
-import { spendTierLabel, type BuyerInsight } from "./buyerInsights";
+import { bidSizeTier, spendTierLabel, type BuyerInsight } from "./buyerInsights";
 import { columnFields, type FilterField } from "./filters";
 import {
   DEFAULT_COLUMN_WIDTH,
@@ -605,9 +605,10 @@ function decorateBuyerCells(grid: Grid, rfqs: Rfq[], insights: Map<string, Buyer
     const relationship = insight?.relationship
       ? '<span class="buyer-tag relationship-tag" title="Prior relationship / win">REL</span>'
       : "";
-    const tier = insight?.spendTier ?? 0;
+    const bidValue = Math.max(0, rfq.estimatedValue ?? 0);
+    const tier = bidSizeTier(bidValue);
     const spend = tier
-      ? `<span class="buyer-tag spend-tag tier-${tier}" title="${formatBuyerSpend(insight?.totalValue ?? 0)} in open RFQs">${spendTierLabel(tier)}</span>`
+      ? `<span class="buyer-tag spend-tag tier-${tier}" title="${formatBuyerSpend(bidValue)} estimated value for this RFQ">${spendTierLabel(tier)}</span>`
       : "";
     const markup = `${relationship}${spend}`;
     if (tags.innerHTML !== markup) tags.innerHTML = markup;

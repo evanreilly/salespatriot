@@ -6,13 +6,13 @@ type Rect = BuyerInsight & { x: number; y: number; width: number; height: number
 
 export function BuyerTagKey() {
   return (
-    <div className="buyer-tag-key" aria-label="Buyer tag key">
-      <span className="buyer-key-label">Key</span>
+    <div className="buyer-tag-key" aria-label="Buyer relationship and individual RFQ value tag key">
+      <span className="buyer-key-label">Bid size</span>
       <span className="buyer-tag relationship-tag">REL</span><span>prior relationship / win</span>
-      <span className="buyer-tag spend-tag tier-1">$</span><span>&lt;$50k</span>
-      <span className="buyer-tag spend-tag tier-2">$$</span><span>$50–250k</span>
-      <span className="buyer-tag spend-tag tier-3">$$$</span><span>$250k–1m</span>
-      <span className="buyer-tag spend-tag tier-4">$$$$</span><span>$1m+</span>
+      <span className="buyer-tag spend-tag tier-1">$</span><span>&lt;$1k</span>
+      <span className="buyer-tag spend-tag tier-2">$$</span><span>$1–5k</span>
+      <span className="buyer-tag spend-tag tier-3">$$$</span><span>$5–25k</span>
+      <span className="buyer-tag spend-tag tier-4">$$$$</span><span>$25k+</span>
     </div>
   );
 }
@@ -48,7 +48,6 @@ export function BuyerTreemapPanel({
         )}
         <button className="popover-close-button" onClick={onClose} aria-label="Close buyer treemap">×</button>
       </header>
-      <BuyerTagKey />
       <div className="buyer-treemap-canvas">
         {rectangles.map((rectangle) => {
           const labelFits = rectangle.width >= 10 && rectangle.height >= 12;
