@@ -17,7 +17,7 @@ Fast Grid uses `SharedArrayBuffer`, so the included development and production s
 
 ## Start the app
 
-Prerequisites: Node.js 22+, `unzip`, and Poppler's `pdftotext` command.
+Prerequisites: Node.js 22+, `curl`, `unzip`, and Poppler's `pdftotext` command.
 
 ```bash
 npm install
@@ -33,6 +33,31 @@ The supplied archive has already been imported into the local ignored database a
 npm run import -- /path/to/archive.zip --date 2026-09-27
 ```
 
+## Fast demo data bootstrap
+
+The reliable terminal path stages searchable rows first, downloads the large PDF archives with resumable `curl` transfers in parallel, validates every ZIP, and starts importing each completed day while the other downloads continue:
+
+```bash
+npm install
+npm run demo:bootstrap -- --limit 7 --concurrency 3
+npm run dev
+```
+
+The command is safe to rerun: `.part` downloads resume, invalid completed files are preserved with an `.invalid-*` suffix, and fully imported days are skipped. Use an exact date or a longer range when needed:
+
+```bash
+npm run demo:bootstrap -- --date 2026-09-25
+npm run demo:bootstrap -- --since 2026-09-07 --concurrency 3
+```
+
+Archives already downloaded by another machine or tool can be copied into one directory tree and imported in date order:
+
+```bash
+npm run import:directory -- /path/to/downloaded-dibbs-files
+```
+
+Keep the terminal bootstrap as the only synchronizer while it runs; start the app afterward, or run the app with `DIBBS_SYNC_ENABLED=false npm run dev`. Budget several gigabytes of free disk space because a single completed-day archive can approach or exceed 1 GB. Rows from the small manifests appear first, but buyer, supply-chain, NAICS, and local PDF details arrive only after that day's full archive ingestion finishes.
+
 ## DIBBS synchronization
 
 The API starts an incremental synchronizer by default. It checks the current DIBBS day at most once an hour and the completed-archive listing every six hours. A fresh completed sync in SQLite suppresses redundant startup work, while an interrupted live run resumes from solicitation numbers already committed in small batches. Automatic checks never replace a completed archive day:
@@ -47,6 +72,7 @@ Manual equivalents are available for operations and debugging:
 
 ```bash
 npm run sync:manifests               # stage the configured horizon from the small index/batch files
+npm run sync:manifests -- --limit 7
 npm run sync:manifests -- --since 2026-09-07
 npm run sync                         # newest completed archive, then today
 npm run sync:today                   # today only

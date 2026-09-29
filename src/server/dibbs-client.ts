@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-const userAgent = "SalesPatriot/0.1 (DIBBS RFQ synchronization)";
+export const dibbsUserAgent = "SalesPatriot/0.1 (DIBBS RFQ synchronization)";
 
 export class DibbsClient {
   private readonly cookies = new Map<string, Map<string, string>>();
@@ -24,6 +24,21 @@ export class DibbsClient {
     });
     if (!response.ok) throw new Error(`DIBBS returned ${response.status} for ${url}`);
     return response.text();
+  }
+
+  async authorizeFileDownload(url: string) {
+    const response = await this.request(url, {
+      headers: { range: "bytes=0-0" },
+    }, 30_000);
+    const contentType = response.headers.get("content-type") ?? "";
+    await response.body?.cancel();
+    if (!response.ok || contentType.includes("text/html")) {
+      throw new Error(`Could not authorize DIBBS file download (${response.status}) for ${url}`);
+    }
+    return {
+      cookie: this.cookieHeader(new URL(url).hostname),
+      userAgent: dibbsUserAgent,
+    };
   }
 
   async download(
@@ -142,7 +157,7 @@ export class DibbsClient {
     if (redirects > 8) throw new Error(`Too many redirects while fetching ${url}`);
     const target = new URL(url);
     const headers = new Headers(init.headers);
-    headers.set("user-agent", userAgent);
+    headers.set("user-agent", dibbsUserAgent);
     headers.set("accept", headers.get("accept") ?? "*/*");
     const cookie = this.cookieHeader(target.hostname);
     if (cookie) headers.set("cookie", cookie);

@@ -16,15 +16,18 @@ const execFileAsync = promisify(execFile);
 const recentUrl = "https://www.dibbs.bsm.dla.mil/RFQ/RFQDates.aspx?category=recent";
 const dateIndex = process.argv.indexOf("--date");
 const sinceIndex = process.argv.indexOf("--since");
+const limitIndex = process.argv.indexOf("--limit");
 const requestedDate = dateIndex >= 0 ? process.argv[dateIndex + 1] : undefined;
 const sinceDate = sinceIndex >= 0 ? process.argv[sinceIndex + 1] : undefined;
+const limit = limitIndex >= 0 ? Number(process.argv[limitIndex + 1]) : dibbsArchiveDays;
+if (!Number.isInteger(limit) || limit < 1) throw new Error("--limit must be a positive integer");
 const client = new DibbsClient();
 const listings = parseArchiveListings(await client.getText(recentUrl));
 const selected = requestedDate
   ? listings.filter((listing) => listing.date === requestedDate)
   : sinceDate
     ? listings.filter((listing) => listing.date >= sinceDate)
-  : listings.slice(0, dibbsArchiveDays);
+  : listings.slice(0, limit);
 let stagedCount = 0;
 const stagedDates: string[] = [];
 

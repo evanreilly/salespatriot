@@ -12,8 +12,10 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "tsx --test src/**/*.test.ts",
     "import": "tsx src/server/import-rfqs.ts",
+    "import:directory": "tsx scripts/import-archive-directory.ts",
     "sync": "tsx src/server/sync-rfqs.ts",
     "sync:manifests": "tsx scripts/stage-dibbs-manifests.ts",
+    "demo:bootstrap": "tsx scripts/bootstrap-demo-data.ts",
     "enrich:metadata": "tsx scripts/enrich-missing-metadata.ts",
     "sync:today": "tsx src/server/sync-rfqs.ts --today-only"
   },

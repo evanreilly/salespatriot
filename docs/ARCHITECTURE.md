@@ -27,7 +27,9 @@ flowchart LR
 
     Timer[In-process timer] --> Coordinator[Single-flight sync coordinator]
     Buttons[Sync latest / Re-sync] --> Coordinator
+    Bootstrap[Terminal demo bootstrap] -->|completed archive| Importer
     DIBBS[DIBBS] -->|CA PDF ZIP + IN index + BQ batch ZIP| Coordinator
+    DIBBS -->|parallel resumable curl| Bootstrap
     DIBBS -->|current-day paged results + PDFs| Coordinator
     Coordinator --> Importer[TypeScript importer]
     Docs --> Importer
@@ -52,6 +54,8 @@ DIBBS publishes three complementary completed-day files. Sales Patriot intention
 The archive synchronizer discovers the newest complete triplet, downloads files atomically through `.part` files, and skips a day already marked as a complete archive. It does not rewrite historical days during routine operation.
 
 For demos or recovery on a constrained connection, `npm run sync:manifests` stages the configured published-archive horizon from only the small index and batch files. These rows are marked `archive-manifest`, appear in the grid immediately, and remain eligible for the normal full-archive pass. Buyer name, supply chain, and NAICS are unavailable in those compact files and remain empty until the eventual PDF ZIP import atomically replaces the staged rows with PDF-derived details and working local document links.
+
+`npm run demo:bootstrap -- --limit 7 --concurrency 3` is the operator-oriented fast path. It first runs that manifest stage, then obtains the DIBBS consent cookie and hands it to parallel resumable `curl` processes. Each transfer writes a `.part` file and must pass `unzip -t` before it is promoted. Completed archives enter a single sequential ingestion queue immediately, so SQLite enrichment overlaps the remaining network transfers without multiple archive imports contending for CPU, temporary disk, or the database. The command can be rerun after interruption. `npm run import:directory -- /path` provides the same sequential ingestion for a directory tree of previously downloaded `caYYMMDD.zip` files and uses colocated index/batch files when present.
 
 DIBBS does not expose the completed files while a day is still changing. For that gap, the live synchronizer:
 
