@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Rfq } from "../shared/rfq.js";
-import { applyRfqFilters, type FilterGroup } from "./filters.js";
+import { applyCachedRfqFilters, applyRfqFilters, type FilterGroup } from "./filters.js";
 
 const rows = [
   { title: "AIRCRAFT VALVE", buyerName: "Avery", quantity: 4, estimatedValue: 1000 },
@@ -26,4 +26,21 @@ test("advanced rules support AND and OR Boolean logic", () => {
     rules: [rules.rules[0], { ...rules.rules[1], operator: "greater_than" }],
   };
   assert.equal(applyRfqFilters(rows, "", orRules).length, 2);
+});
+
+test("cached views reuse the base array for an unfiltered tab", () => {
+  const group: FilterGroup = { conjunction: "and", rules: [] };
+  assert.equal(applyCachedRfqFilters(rows, "", group, {}), rows);
+  assert.equal(
+    applyCachedRfqFilters(rows, "blake", group, {}),
+    applyCachedRfqFilters(rows, "blake", group, {}),
+  );
+});
+
+test("cached views apply displayed column values", () => {
+  const group: FilterGroup = { conjunction: "and", rules: [] };
+  assert.deepEqual(
+    applyCachedRfqFilters(rows, "", group, { 1: "truck", 6: "blake" }).map((row) => row.title),
+    ["TRUCK FILTER"],
+  );
 });

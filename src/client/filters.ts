@@ -1,4 +1,5 @@
 import type { Rfq } from "../shared/rfq";
+import { rfqCellValues } from "./gridData";
 
 export type FilterField =
   | "solicitationNumber"
@@ -125,11 +126,50 @@ export function emptyFilterGroup(): FilterGroup {
 export function applyRfqFilters(rfqs: Rfq[], globalQuery: string, group: FilterGroup): Rfq[] {
   const query = globalQuery.trim().toLowerCase();
   return rfqs.filter((rfq) => {
-    if (query && !searchableValues(rfq).some((value) => value.toLowerCase().includes(query))) return false;
+    if (query && !searchableText(rfq).includes(query)) return false;
     if (group.rules.length === 0) return true;
     const matches = group.rules.map((rule) => matchesRule(rfq, rule));
     return group.conjunction === "and" ? matches.every(Boolean) : matches.some(Boolean);
   });
+}
+
+const filteredViewCache = new WeakMap<Rfq[], Map<string, Rfq[]>>();
+
+export function applyCachedRfqFilters(
+  rfqs: Rfq[],
+  globalQuery: string,
+  group: FilterGroup,
+  columnFilters: Record<number, string>,
+) {
+  const key = JSON.stringify([
+    localDateKey(),
+    globalQuery.trim().toLowerCase(),
+    group,
+    Object.entries(columnFilters).sort(([left], [right]) => Number(left) - Number(right)),
+  ]);
+  let cache = filteredViewCache.get(rfqs);
+  if (!cache) {
+    cache = new Map();
+    filteredViewCache.set(rfqs, cache);
+  }
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const activeColumns = Object.entries(columnFilters)
+    .map(([column, value]) => [Number(column), value.toLowerCase()] as const)
+    .filter(([, value]) => value.length > 0);
+  const hasBroadFilters = Boolean(globalQuery.trim()) || group.rules.length > 0;
+  const broadlyFiltered = hasBroadFilters ? applyRfqFilters(rfqs, globalQuery, group) : rfqs;
+  const result = activeColumns.length === 0 ? broadlyFiltered : broadlyFiltered.filter((rfq) => {
+      const values = rfqCellValues(rfq);
+      return activeColumns.every(([column, value]) =>
+        String(values[column] ?? "").toLowerCase().includes(value)
+      );
+    });
+
+  if (cache.size >= 64) cache.delete(cache.keys().next().value as string);
+  cache.set(key, result);
+  return result;
 }
 
 export function cloneFilterGroup(group: FilterGroup): FilterGroup {
@@ -194,10 +234,23 @@ function getFieldValue(rfq: Rfq, field: FilterField): string | number | null {
   return rfq[field];
 }
 
-function searchableValues(rfq: Rfq) {
-  return columnFields.map((field) => String(getFieldValue(rfq, field) ?? ""));
+const searchableTextCache = new WeakMap<Rfq, string>();
+
+function searchableText(rfq: Rfq) {
+  const cached = searchableTextCache.get(rfq);
+  if (cached !== undefined) return cached;
+  const text = columnFields
+    .map((field) => String(getFieldValue(rfq, field) ?? "").toLowerCase())
+    .join("\u0000");
+  searchableTextCache.set(rfq, text);
+  return text;
 }
 
 function startOfLocalDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function localDateKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 }

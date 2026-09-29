@@ -1,4 +1,4 @@
-import { FilterCell, Grid, HeaderCell, type Row } from "fast-grid";
+import { FilterCell, Grid, HeaderCell } from "fast-grid";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { Rfq } from "../shared/rfq";
 import { columnFields, type FilterField } from "./filters";
@@ -8,6 +8,8 @@ import {
   fittedWidthFromMeasurements,
   normalizeColumnWidths,
 } from "./gridLayout";
+import { gridRows, rfqCellValues } from "./gridData";
+import { sortRuleKey, type SortRule } from "./gridSort";
 
 const headers = [
   "Solicitation",
@@ -24,57 +26,133 @@ const headers = [
 
 type Props = {
   rfqs: Rfq[];
+  visibleRfqs: Rfq[];
   onSelect: (rfq: Rfq, anchor: PopoverAnchor, field: FilterField) => void;
   onSelectNsn: (rfq: Rfq, anchor: PopoverAnchor) => void;
-  onFilteredChange: (rfqs: Rfq[]) => void;
   columnFilters: Record<number, string>;
   onColumnFiltersChange: (filters: Record<number, string>) => void;
   columnWidths: number[];
   onColumnWidthsChange: (widths: number[]) => void;
   onOpenFilterBuilder: (field: FilterField) => void;
   resetVersion: number;
-  viewVersion: number;
 };
 
 export type PopoverAnchor = { element: HTMLElement };
 
-type SortRule = { column: number; direction: "ascending" | "descending" };
-
 export function FastGrid({
   rfqs,
+  visibleRfqs,
   onSelect,
   onSelectNsn,
-  onFilteredChange,
   columnFilters,
   onColumnFiltersChange,
   columnWidths,
   onColumnWidthsChange,
   onOpenFilterBuilder,
   resetVersion,
-  viewVersion,
 }: Props) {
   const [sortRules, setSortRules] = useState<SortRule[]>([]);
-  const orderedRfqs = useMemo(() => sortRfqs(rfqs, sortRules), [rfqs, sortRules]);
+  const baseIndexes = useMemo(() => new Map(rfqs.map((rfq, index) => [rfq, index])), [rfqs]);
+  const visibleIndexes = useMemo(
+    () => indexesForView(rfqs, visibleRfqs, baseIndexes),
+    [baseIndexes, rfqs, visibleRfqs],
+  );
+  const [orderedIndexes, setOrderedIndexes] = useState<Uint32Array<ArrayBufferLike>>(visibleIndexes);
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<Grid | null>(null);
-  const recordsRef = useRef<Rfq[]>(orderedRfqs);
+  const sortWorkerRef = useRef<Worker | null>(null);
+  const sortGenerationRef = useRef(0);
+  const sortRequestRef = useRef(0);
+  const activeSortRequestRef = useRef(0);
+  const sortRequestsRef = useRef(new Map<number, { view: Rfq[]; key: string }>());
+  const recordsRef = useRef<Rfq[]>(rfqs);
+  const visibleRecordsRef = useRef<Rfq[]>(visibleRfqs);
   const sortRulesRef = useRef(sortRules);
   const columnWidthsRef = useRef(normalizeColumnWidths(columnWidths));
   const onSelectRef = useRef(onSelect);
   const onSelectNsnRef = useRef(onSelectNsn);
-  const onFilteredChangeRef = useRef(onFilteredChange);
   const onColumnFiltersChangeRef = useRef(onColumnFiltersChange);
   const onColumnWidthsChangeRef = useRef(onColumnWidthsChange);
   const onOpenFilterBuilderRef = useRef(onOpenFilterBuilder);
 
-  recordsRef.current = orderedRfqs;
+  recordsRef.current = rfqs;
+  visibleRecordsRef.current = visibleRfqs;
   sortRulesRef.current = sortRules;
   onSelectRef.current = onSelect;
   onSelectNsnRef.current = onSelectNsn;
-  onFilteredChangeRef.current = onFilteredChange;
   onColumnFiltersChangeRef.current = onColumnFiltersChange;
   onColumnWidthsChangeRef.current = onColumnWidthsChange;
   onOpenFilterBuilderRef.current = onOpenFilterBuilder;
+
+  useEffect(() => {
+    const worker = new Worker(new URL("./gridSort.worker.ts", import.meta.url), { type: "module" });
+    sortWorkerRef.current = worker;
+    worker.onmessage = (event: MessageEvent<{
+      type: "sorted";
+      generation: number;
+      requestId: number;
+      indexes: Uint32Array;
+    }>) => {
+      const message = event.data;
+      if (message.type !== "sorted" || message.generation !== sortGenerationRef.current) return;
+      const request = sortRequestsRef.current.get(message.requestId);
+      sortRequestsRef.current.delete(message.requestId);
+      if (!request) return;
+      rememberSortedIndexes(request.view, request.key, message.indexes);
+      if (message.requestId === activeSortRequestRef.current) setOrderedIndexes(message.indexes);
+    };
+    return () => {
+      worker.terminate();
+      sortWorkerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const worker = sortWorkerRef.current;
+    if (!worker) return;
+    sortGenerationRef.current += 1;
+    const generation = sortGenerationRef.current;
+    sortRequestsRef.current.clear();
+    worker.postMessage({
+      type: "set-data",
+      generation,
+      values: rfqs.map(rfqCellValues),
+    });
+  }, [rfqs]);
+
+  useEffect(() => {
+    const key = sortRuleKey(sortRules);
+    if (!key) {
+      activeSortRequestRef.current = 0;
+      setOrderedIndexes(visibleIndexes);
+      return;
+    }
+    const cached = recallSortedIndexes(visibleRfqs, key);
+    if (cached) {
+      activeSortRequestRef.current = 0;
+      setOrderedIndexes(cached);
+      return;
+    }
+
+    // Update the tab immediately in its natural order. The worker replaces
+    // this compact index array with the cached/sorted order when ready.
+    setOrderedIndexes(visibleIndexes);
+    const worker = sortWorkerRef.current;
+    if (!worker) return;
+    const requestId = sortRequestRef.current + 1;
+    sortRequestRef.current = requestId;
+    activeSortRequestRef.current = requestId;
+    sortRequestsRef.current.set(requestId, { view: visibleRfqs, key });
+    const indexes = visibleIndexes.slice();
+    worker.postMessage({
+      type: "sort",
+      generation: sortGenerationRef.current,
+      requestId,
+      viewId: viewIdFor(visibleRfqs, rfqs),
+      indexes,
+      rules: sortRules,
+    }, [indexes.buffer]);
+  }, [rfqs, sortRules, visibleIndexes, visibleRfqs]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -94,7 +172,7 @@ export function FastGrid({
       onColumnWidthsChangeRef.current([...nextWidths]);
     };
     const fitColumn = (column: number) => {
-      const fittedWidth = measureFittedColumnWidth(grid, column, recordsRef.current);
+      const fittedWidth = measureFittedColumnWidth(grid, column, visibleRecordsRef.current);
       const currentWidth = columnWidthsRef.current[column] ?? DEFAULT_COLUMN_WIDTH;
       setColumnWidth(column, currentWidth === fittedWidth ? DEFAULT_COLUMN_WIDTH : fittedWidth);
     };
@@ -144,15 +222,18 @@ export function FastGrid({
       const field = columnFields[cell.id];
       if (field) onSelectRef.current(rfq, anchor, field);
     };
-    const handleFilterInput = () => {
-      queueMicrotask(() => {
-        onColumnFiltersChangeRef.current({ ...grid.rowManager.view.filter });
-        notifyFilteredRows(grid, recordsRef.current, onFilteredChangeRef.current);
-        window.setTimeout(() => {
-          refreshRenderedRows(grid);
-          decorateSolicitationCells(grid, recordsRef.current);
-        }, 50);
-      });
+    const handleFilterInput = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      const filterCell = Object.values(grid.headerRows[0]?.cellComponentMap ?? {})
+        .find((candidate) => candidate instanceof FilterCell && candidate.input === target);
+      if (!(filterCell instanceof FilterCell)) return;
+      event.stopImmediatePropagation();
+      const next = { ...grid.rowManager.view.filter };
+      if (target.value) next[filterCell.index] = target.value;
+      else delete next[filterCell.index];
+      grid.rowManager.view.filter = next;
+      onColumnFiltersChangeRef.current({ ...next });
     };
     const decorate = () => {
       decorateFilterCells(grid, onOpenFilterBuilderRef, sortRulesRef.current);
@@ -164,14 +245,14 @@ export function FastGrid({
     observer.observe(container, { childList: true, subtree: true });
     container.addEventListener("click", handleSortClick, true);
     container.addEventListener("click", handleClick);
-    container.addEventListener("input", handleFilterInput);
+    container.addEventListener("input", handleFilterInput, true);
     decorate();
 
     return () => {
       observer.disconnect();
       container.removeEventListener("click", handleSortClick, true);
       container.removeEventListener("click", handleClick);
-      container.removeEventListener("input", handleFilterInput);
+      container.removeEventListener("input", handleFilterInput, true);
       grid.destroy();
       gridRef.current = null;
     };
@@ -186,26 +267,38 @@ export function FastGrid({
   }, [columnWidths]);
 
   useEffect(() => {
-    const rows: Row[] = orderedRfqs.map((rfq, id) => ({
-      id,
-      cells: rfqCellValues(rfq).map((value, cellId) => ({ id: cellId, v: value })),
-    }));
     const grid = gridRef.current;
     if (!grid) return;
-    grid.rowManager.setRows(rows);
-    applyColumnFilterView(grid, columnFilters);
+    grid.rowManager.isViewResult = false;
+    grid.rowManager.setRows(gridRows(rfqs), true);
+  }, [rfqs]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const buffer = grid.rowManager.viewBuffer.buffer;
+    for (let index = 0; index < orderedIndexes.length; index += 1) {
+      Atomics.store(buffer, index, orderedIndexes[index]);
+    }
+    const count = orderedIndexes.length;
+    grid.rowManager.viewBuffer.numRows = count;
+    grid.rowManager.isViewResult = true;
+    grid.rowManager.view.filter = { ...columnFilters };
+    grid.rowManager.view.sort = [];
+    syncFilterCells(grid);
     syncSortIndicators(grid, sortRules);
-    window.setTimeout(() => refreshRenderedRows(grid), 50);
-    decorateSolicitationCells(grid, orderedRfqs);
-    notifyFilteredRows(grid, orderedRfqs, onFilteredChangeRef.current);
-  }, [orderedRfqs, viewVersion]);
+    grid.scrollbar.setScrollOffsetY(Math.min(grid.offsetY, Math.max(0, count * 32 - grid.viewportHeight)));
+    grid.renderViewportRows();
+    refreshRenderedRows(grid);
+    grid.renderViewportCells();
+    grid.scrollbar.refreshThumb();
+    decorateSolicitationCells(grid, rfqs);
+  }, [columnFilters, orderedIndexes, rfqs, sortRules]);
 
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid || sameFilters(grid.rowManager.view.filter, columnFilters)) return;
     applyColumnFilterView(grid, columnFilters);
-    window.setTimeout(() => refreshRenderedRows(grid), 50);
-    notifyFilteredRows(grid, recordsRef.current, onFilteredChangeRef.current);
   }, [columnFilters]);
 
   useEffect(() => {
@@ -213,14 +306,8 @@ export function FastGrid({
     if (!grid || resetVersion === 0) return;
     setSortRules([]);
 
-    // Supersede any filter still running in Fast Grid's worker. An empty view
-    // is handled only on the main thread, so posting an identity filter keeps
-    // a stale result from the previous tab from reappearing after reset.
     grid.rowManager.view.sort = [];
-    grid.rowManager.view.filter = { 0: "" };
-    void grid.rowManager.runFilter();
     grid.rowManager.view.filter = {};
-    grid.rowManager.isViewResult = false;
     syncFilterCells(grid);
     resetSortIndicators(grid);
     grid.scrollbar.setScrollOffsetY(0);
@@ -230,7 +317,6 @@ export function FastGrid({
     grid.renderViewportCells();
     grid.scrollbar.refreshThumb();
     decorateSolicitationCells(grid, recordsRef.current);
-    notifyFilteredRows(grid, recordsRef.current, onFilteredChangeRef.current);
   }, [resetVersion]);
 
   return (
@@ -502,25 +588,8 @@ function syncFilterCells(grid: Grid) {
 }
 
 function applyColumnFilterView(grid: Grid, filters: Record<number, string>) {
-  const previousHadFilters = Object.keys(grid.rowManager.view.filter).length > 0;
-  const hasFilters = Object.keys(filters).length > 0;
-
-  if (!hasFilters && previousHadFilters) {
-    // Fast Grid computes views in a worker. Posting an identity filter first
-    // invalidates any result still in flight from the previously selected tab.
-    grid.rowManager.view.filter = { 0: "" };
-    void grid.rowManager.runFilter();
-  }
-
   grid.rowManager.view.filter = { ...filters };
-  grid.rowManager.isViewResult = false;
   syncFilterCells(grid);
-  grid.renderViewportRows();
-  refreshRenderedRows(grid);
-  grid.renderViewportCells();
-  grid.scrollbar.refreshThumb();
-
-  if (hasFilters) void grid.rowManager.runFilter();
 }
 
 function resetSortIndicators(grid: Grid) {
@@ -556,48 +625,6 @@ function sameFilters(left: Record<number, string>, right: Record<number, string>
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function notifyFilteredRows(grid: Grid, rfqs: Rfq[], onChange: (rfqs: Rfq[]) => void) {
-  const filters = grid.rowManager.view.filter;
-  if (Object.keys(filters).length === 0) {
-    onChange(rfqs);
-    return;
-  }
-
-  onChange(
-    rfqs.filter((_, rowIndex) => {
-      const row = grid.rowManager.rows[rowIndex];
-      if (!row) return false;
-      return Object.entries(filters).every(([column, value]) =>
-        String(row.cells[Number(column)]?.v ?? "")
-          .toLowerCase()
-          .includes(value.toLowerCase()),
-      );
-    }),
-  );
-}
-
-function formatShortDate(value: string | null) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
-    new Date(`${value}T12:00:00`),
-  );
-}
-
-function rfqCellValues(rfq: Rfq) {
-  return [
-    rfq.solicitationNumber,
-    rfq.title,
-    rfq.nsn ?? "—",
-    rfq.quantity ?? "—",
-    rfq.unit ?? "—",
-    formatShortDate(rfq.closeDate),
-    rfq.buyerName ?? "—",
-    rfq.supplyChain ?? rfq.agency ?? "—",
-    rfq.naics ?? "—",
-    rfq.deliveryDays ?? "—",
-  ];
-}
-
 function toggleSortRule(sortRules: SortRule[], column: number): SortRule[] {
   const existing = sortRules.find((rule) => rule.column === column);
   if (!existing) return [...sortRules, { column, direction: "descending" }];
@@ -609,21 +636,51 @@ function toggleSortRule(sortRules: SortRule[], column: number): SortRule[] {
   return sortRules.filter((rule) => rule.column !== column);
 }
 
-const gridCollator = new Intl.Collator("en-US", { numeric: true, sensitivity: "base" });
+const sortedIndexCache = new WeakMap<Rfq[], Map<string, Uint32Array<ArrayBufferLike>>>();
+const visibleIndexCache = new WeakMap<Rfq[], { base: Rfq[]; indexes: Uint32Array }>();
+const gridViewIds = new WeakMap<Rfq[], number>();
+let nextGridViewId = 1;
 
-function sortRfqs(rfqs: Rfq[], sortRules: SortRule[]) {
-  if (sortRules.length === 0) return rfqs;
-  return rfqs
-    .map((rfq, index) => ({ rfq, index, values: rfqCellValues(rfq) }))
-    .sort((left, right) => {
-      for (const rule of sortRules) {
-        const comparison = gridCollator.compare(
-          String(left.values[rule.column] ?? ""),
-          String(right.values[rule.column] ?? ""),
-        );
-        if (comparison !== 0) return rule.direction === "ascending" ? comparison : -comparison;
-      }
-      return left.index - right.index;
-    })
-    .map(({ rfq }) => rfq);
+function indexesForView(base: Rfq[], view: Rfq[], baseIndexes: Map<Rfq, number>) {
+  const cached = visibleIndexCache.get(view);
+  if (cached?.base === base) return cached.indexes;
+  const indexes = new Uint32Array(view.length);
+  let count = 0;
+  for (const rfq of view) {
+    const index = baseIndexes.get(rfq);
+    if (index === undefined) continue;
+    indexes[count] = index;
+    count += 1;
+  }
+  const result = count === indexes.length ? indexes : indexes.slice(0, count);
+  visibleIndexCache.set(view, { base, indexes: result });
+  return result;
+}
+
+function rememberSortedIndexes(
+  view: Rfq[],
+  key: string,
+  indexes: Uint32Array<ArrayBufferLike>,
+) {
+  let cache = sortedIndexCache.get(view);
+  if (!cache) {
+    cache = new Map();
+    sortedIndexCache.set(view, cache);
+  }
+  if (cache.size >= 32) cache.delete(cache.keys().next().value as string);
+  cache.set(key, indexes);
+}
+
+function recallSortedIndexes(view: Rfq[], key: string) {
+  return sortedIndexCache.get(view)?.get(key);
+}
+
+function viewIdFor(view: Rfq[], base: Rfq[]) {
+  if (view === base) return 0;
+  const existing = gridViewIds.get(view);
+  if (existing !== undefined) return existing;
+  const id = nextGridViewId;
+  nextGridViewId += 1;
+  gridViewIds.set(view, id);
+  return id;
 }

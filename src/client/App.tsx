@@ -12,7 +12,7 @@ import type { ApprovedPart, Rfq, RfqDay, RfqListResponse, SyncProgress, SyncStat
 import { FastGrid, type PopoverAnchor } from "./FastGrid";
 import { AddViewPopover, FilterBuilderPanel, SaveViewPopover } from "./FilterDialogs";
 import {
-  applyRfqFilters,
+  applyCachedRfqFilters,
   cloneFilterGroup,
   createId,
   emptyFilterGroup,
@@ -33,7 +33,6 @@ export function App() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [rfqs, setRfqs] = useState<Rfq[]>([]);
-  const [filteredRfqs, setFilteredRfqs] = useState<Rfq[]>([]);
   const [fullDetails, setFullDetails] = useState<{ rfq: Rfq; anchor: PopoverAnchor } | null>(null);
   const [partsPopover, setPartsPopover] = useState<{ rfq: Rfq; anchor: PopoverAnchor } | null>(null);
   const [previewPopover, setPreviewPopover] = useState<{
@@ -53,7 +52,6 @@ export function App() {
   const [addViewOpen, setAddViewOpen] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [gridResetVersion, setGridResetVersion] = useState(0);
-  const [gridViewVersion, setGridViewVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<SyncStatus | null>(null);
@@ -76,7 +74,6 @@ export function App() {
     setBuilderRequest(null);
     setSaveViewOpen(false);
     setAddViewOpen(false);
-    setGridViewVersion((version) => version + 1);
   }, []);
 
   const importSharedView = useCallback((url: string) => {
@@ -134,14 +131,12 @@ export function App() {
     setFullDetails(null);
     setPartsPopover(null);
     setPreviewPopover(null);
-    setFilteredRfqs([]);
     const params = new URLSearchParams();
     if (fromDate) params.set("from", fromDate);
     if (toDate) params.set("to", toDate);
     fetchJson<RfqListResponse>(`/api/rfqs${params.size ? `?${params}` : ""}`)
       .then(({ data }) => {
         setRfqs(data);
-        setFilteredRfqs(data);
       })
       .catch((cause) => setError(errorMessage(cause)))
       .finally(() => setLoading(false));
@@ -178,11 +173,14 @@ export function App() {
     localStorage.setItem(allRfqsColumnWidthsKey, JSON.stringify(allRfqsColumnWidths));
   }, [allRfqsColumnWidths]);
 
-  const tableRfqs = useMemo(
-    () => applyRfqFilters(rfqs, globalQuery, filterGroup),
-    [rfqs, globalQuery, filterGroup],
+  const filteredRfqs = useMemo(
+    () => applyCachedRfqFilters(rfqs, globalQuery, filterGroup, columnFilters),
+    [rfqs, globalQuery, filterGroup, columnFilters],
   );
-  const estimatedBidValue = filteredRfqs.reduce((total, rfq) => total + (rfq.estimatedValue ?? 0), 0);
+  const estimatedBidValue = useMemo(
+    () => filteredRfqs.reduce((total, rfq) => total + (rfq.estimatedValue ?? 0), 0),
+    [filteredRfqs],
+  );
   const filterCount = filterGroup.rules.length + Object.keys(columnFilters).length + (globalQuery.trim() ? 1 : 0);
 
   const selectAllView = () => {
@@ -421,7 +419,8 @@ export function App() {
           ) : (
             <div className={loading ? "grid-container grid-loading" : "grid-container"}>
               <FastGrid
-                rfqs={tableRfqs}
+                rfqs={rfqs}
+                visibleRfqs={filteredRfqs}
                 onSelect={(rfq, anchor, field) => {
                   setPartsPopover(null);
                   setPreviewPopover({ rfq, anchor, field });
@@ -430,14 +429,12 @@ export function App() {
                   setPreviewPopover(null);
                   setPartsPopover({ rfq, anchor });
                 }}
-                onFilteredChange={setFilteredRfqs}
                 columnFilters={columnFilters}
                 onColumnFiltersChange={setColumnFilters}
                 columnWidths={columnWidths}
                 onColumnWidthsChange={setColumnWidths}
                 onOpenFilterBuilder={(field) => setBuilderRequest({ field })}
                 resetVersion={gridResetVersion}
-                viewVersion={gridViewVersion}
               />
             </div>
           )}

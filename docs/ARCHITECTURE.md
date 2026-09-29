@@ -218,6 +218,8 @@ Each saved tab can also be serialized into a versioned, URL-safe hash. `All RFQs
 
 The Boolean builder expands to the table width and shifts the grid down while it is being edited. Approved parts use a lightweight table-native popout beside the selected NSN, without dimming or blocking the grid.
 
+Fast Grid receives the complete row store only when the API dataset changes. Filter-tab changes reuse cached in-memory result arrays and replace only the grid's compact `Uint32Array` view index, preserving Fast Grid's recycled viewport DOM. A dedicated browser worker receives cell values once per dataset, precomputes both directions for every single-column sort, and caches requested multi-column or filtered-view orders. Sorting therefore never blocks tab creation or tab navigation on the UI thread.
+
 ## API surface
 
 | Method | Route | Purpose |
