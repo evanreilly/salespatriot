@@ -131,16 +131,28 @@ app.get("/api/rfqs", (request, response) => {
   const clauses: string[] = [];
   const values: string[] = [];
   if (from) {
-    clauses.push("archive_date >= ?");
+    clauses.push("r.archive_date >= ?");
     values.push(from);
   }
   if (to) {
-    clauses.push("archive_date <= ?");
+    clauses.push("r.archive_date <= ?");
     values.push(to);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const rows = db
-    .prepare(`SELECT * FROM rfqs ${where} ORDER BY archive_date DESC, solicitation_number`)
+    .prepare(
+      `SELECT r.*,
+              (SELECT json_group_array(part_number)
+               FROM (
+                 SELECT DISTINCT part_number
+                 FROM approved_parts
+                 WHERE rfq_id = r.id
+                 ORDER BY part_number
+               )) AS approved_part_numbers
+       FROM rfqs r
+       ${where}
+       ORDER BY r.archive_date DESC, r.solicitation_number`,
+    )
     .all(...values) as RfqRow[];
   response.json({ data: rows.map(serializeRfq), total: rows.length, from: from || "", to: to || "" });
 });

@@ -969,6 +969,7 @@ function parseSqliteTimestamp(value: string) {
 }
 
 function previewFieldValue(rfq: Rfq, field: FilterField) {
+  if (field === "approvedPartNumber") return rfq.approvedPartNumbers.join(", ") || "—";
   if (field === "supplyChain") return rfq.supplyChain ?? rfq.agency ?? "—";
   if (field === "quantity") {
     return rfq.quantity === null ? "—" : `${rfq.quantity.toLocaleString()} ${rfq.unit ?? ""}`.trim();

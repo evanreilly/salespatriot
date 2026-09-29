@@ -8,6 +8,7 @@ export function serializeRfq(row: RfqRow): Rfq {
     solicitationNumber: row.solicitation_number,
     title: row.title,
     nsn: row.nsn,
+    approvedPartNumbers: parsePartNumbers(row.approved_part_numbers),
     purchaseRequest: row.purchase_request,
     quantity: row.quantity,
     unit: row.unit,
@@ -27,4 +28,14 @@ export function serializeRfq(row: RfqRow): Rfq {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parsePartNumbers(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((part): part is string => typeof part === "string") : [];
+  } catch {
+    return [];
+  }
 }

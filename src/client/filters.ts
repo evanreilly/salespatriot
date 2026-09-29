@@ -5,6 +5,7 @@ export type FilterField =
   | "solicitationNumber"
   | "title"
   | "nsn"
+  | "approvedPartNumber"
   | "quantity"
   | "unit"
   | "closeDate"
@@ -57,6 +58,7 @@ export const fieldDefinitions: { key: FilterField; label: string; kind: FieldKin
   { key: "solicitationNumber", label: "Solicitation", kind: "text" },
   { key: "title", label: "Item description", kind: "text" },
   { key: "nsn", label: "NSN", kind: "text" },
+  { key: "approvedPartNumber", label: "Approved part number", kind: "text" },
   { key: "quantity", label: "Quantity", kind: "number" },
   { key: "unit", label: "Unit", kind: "text" },
   { key: "closeDate", label: "Close date", kind: "date" },
@@ -185,6 +187,9 @@ export function operatorNeedsValue(operator: FilterOperator) {
 }
 
 function matchesRule(rfq: Rfq, rule: FilterRule) {
+  if (rule.field === "approvedPartNumber") {
+    return matchesTextList(rfq.approvedPartNumbers, rule);
+  }
   const rawValue = getFieldValue(rfq, rule.field);
   const empty = rawValue === null || rawValue === undefined || rawValue === "";
   if (rule.operator === "is_empty") return empty;
@@ -230,6 +235,7 @@ function matchesRule(rfq: Rfq, rule: FilterRule) {
 }
 
 function getFieldValue(rfq: Rfq, field: FilterField): string | number | null {
+  if (field === "approvedPartNumber") return rfq.approvedPartNumbers.join("\u0000");
   if (field === "supplyChain") return rfq.supplyChain ?? rfq.agency;
   return rfq[field];
 }
@@ -239,11 +245,26 @@ const searchableTextCache = new WeakMap<Rfq, string>();
 function searchableText(rfq: Rfq) {
   const cached = searchableTextCache.get(rfq);
   if (cached !== undefined) return cached;
-  const text = columnFields
+  const text = [...columnFields, "approvedPartNumber" as const]
     .map((field) => String(getFieldValue(rfq, field) ?? "").toLowerCase())
     .join("\u0000");
   searchableTextCache.set(rfq, text);
   return text;
+}
+
+function matchesTextList(values: string[], rule: FilterRule) {
+  const populated = values.filter(Boolean);
+  if (rule.operator === "is_empty") return populated.length === 0;
+  if (rule.operator === "is_not_empty") return populated.length > 0;
+  if (populated.length === 0) return false;
+  const right = rule.value.trim().toLowerCase();
+  const normalized = populated.map((value) => value.toLowerCase());
+  if (rule.operator === "contains") return normalized.some((value) => value.includes(right));
+  if (rule.operator === "not_contains") return normalized.every((value) => !value.includes(right));
+  if (rule.operator === "equals") return normalized.some((value) => value === right);
+  if (rule.operator === "not_equals") return normalized.every((value) => value !== right);
+  if (rule.operator === "starts_with") return normalized.some((value) => value.startsWith(right));
+  return false;
 }
 
 function startOfLocalDay(date: Date) {

@@ -4,6 +4,7 @@ export type Rfq = {
   solicitationNumber: string;
   title: string;
   nsn: string | null;
+  approvedPartNumbers: string[];
   purchaseRequest: string | null;
   quantity: number | null;
   unit: string | null;

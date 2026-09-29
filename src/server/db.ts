@@ -98,6 +98,7 @@ export type RfqRow = {
   solicitation_number: string;
   title: string;
   nsn: string | null;
+  approved_part_numbers?: string | null;
   purchase_request: string | null;
   quantity: number | null;
   unit: string | null;
