@@ -167,8 +167,6 @@ export function FastGrid({
     const grid = new Grid(container, [], headers);
     gridRef.current = grid;
 
-    installVariableColumnLayout(grid, columnWidthsRef);
-
     const setColumnWidth = (column: number, width: number) => {
       const nextWidths = [...columnWidthsRef.current];
       nextWidths[column] = clampColumnWidth(width);
@@ -241,22 +239,23 @@ export function FastGrid({
       grid.rowManager.view.filter = next;
       onColumnFiltersChangeRef.current({ ...next });
     };
-    const decorate = () => {
-      decorateFilterCells(grid, onOpenFilterBuilderRef, sortRulesRef.current);
-      decorateHeaderCells(grid, fitColumn, startColumnResize);
+    const decorateRows = () => {
       decorateSolicitationCells(grid, recordsRef.current);
       decorateBuyerCells(grid, recordsRef.current, buyerInsightsRef.current);
       applyColumnLayout(grid, columnWidthsRef.current);
     };
-    const observer = new MutationObserver(() => queueMicrotask(decorate));
-    observer.observe(container, { childList: true, subtree: true });
+    const decorateAll = () => {
+      decorateFilterCells(grid, onOpenFilterBuilderRef, sortRulesRef.current);
+      decorateHeaderCells(grid, fitColumn, startColumnResize);
+      decorateRows();
+    };
+    installVariableColumnLayout(grid, columnWidthsRef, decorateRows, decorateAll);
     container.addEventListener("click", handleSortClick, true);
     container.addEventListener("click", handleClick);
     container.addEventListener("input", handleFilterInput, true);
-    decorate();
+    decorateAll();
 
     return () => {
-      observer.disconnect();
       container.removeEventListener("click", handleSortClick, true);
       container.removeEventListener("click", handleClick);
       container.removeEventListener("input", handleFilterInput, true);
@@ -411,11 +410,13 @@ function decorateHeaderCells(
 function installVariableColumnLayout(
   grid: Grid,
   widthsRef: MutableRefObject<number[]>,
+  afterRowsRendered: () => void,
+  afterCellsRendered: () => void,
 ) {
   const baseGetState = grid.getState;
   const baseRenderRows = grid.renderViewportRows;
   const baseRenderCells = grid.renderViewportCells;
-  const renderedRowIds = new WeakMap<object, number>();
+  const renderedRows = new WeakMap<object, object>();
 
   grid.getState = () => {
     const state = baseGetState();
@@ -460,31 +461,41 @@ function installVariableColumnLayout(
 
   grid.renderViewportRows = () => {
     baseRenderRows();
-    refreshRecycledRowContents(grid, renderedRowIds);
-    applyColumnLayout(grid, widthsRef.current);
+    refreshRecycledRowContents(grid, renderedRows);
+    afterRowsRendered();
     grid.container.dispatchEvent(new Event("fast-grid-positionchange", { bubbles: true }));
   };
   grid.renderViewportCells = () => {
     baseRenderCells();
-    applyColumnLayout(grid, widthsRef.current);
+    afterCellsRendered();
     grid.container.dispatchEvent(new Event("fast-grid-positionchange", { bubbles: true }));
   };
 }
 
-function refreshRecycledRowContents(grid: Grid, renderedRowIds: WeakMap<object, number>) {
+function refreshRecycledRowContents(grid: Grid, renderedRows: WeakMap<object, object>) {
   for (const component of Object.values(grid.rowComponentMap)) {
-    const previousRowId = renderedRowIds.get(component);
-    renderedRowIds.set(component, component.id);
-    if (previousRowId === undefined || previousRowId === component.id) continue;
-
     const row = grid.rowManager.rows[component.id];
     if (!row) continue;
+    const previousRow = renderedRows.get(component);
+    renderedRows.set(component, row);
+    if (previousRow === undefined || previousRow === row) continue;
+
     component.cells = row.cells;
     for (const cellComponent of Object.values(component.cellComponentMap)) {
       const cell = row.cells[cellComponent.id];
-      if (cell) cellComponent.setContent(cell.v);
+      if (cell) setCellTextPreservingDecorations(cellComponent.el, cell.v);
     }
   }
+}
+
+function setCellTextPreservingDecorations(element: HTMLElement, value: string | number) {
+  const text = String(value);
+  const firstChild = element.firstChild;
+  if (firstChild?.nodeType === Node.TEXT_NODE) {
+    if (firstChild.nodeValue !== text) firstChild.nodeValue = text;
+    return;
+  }
+  element.insertBefore(document.createTextNode(text), firstChild);
 }
 
 function refreshColumnLayout(grid: Grid, widths: number[]) {
@@ -612,7 +623,11 @@ function decorateBuyerCells(grid: Grid, rfqs: Rfq[], insights: Map<string, Buyer
   for (const row of Object.values(grid.rowComponentMap)) {
     const cell = row.cellComponentMap[6];
     const rfq = rfqs[row.id];
-    if (!cell || !rfq?.buyerName) continue;
+    if (!cell || !rfq) continue;
+    if (!rfq.buyerName) {
+      cell.el.querySelector(".buyer-cell-tags")?.remove();
+      continue;
+    }
     const insight = insights.get(rfq.buyerName);
     cell.el.classList.add("buyer-cell");
     let tags = cell.el.querySelector<HTMLElement>(".buyer-cell-tags");
@@ -673,7 +688,7 @@ function refreshRenderedRows(grid: Grid) {
     component.cells = row.cells;
     for (const cellComponent of Object.values(component.cellComponentMap)) {
       const cell = row.cells[cellComponent.id];
-      if (cell) cellComponent.setContent(cell.v);
+      if (cell) setCellTextPreservingDecorations(cellComponent.el, cell.v);
     }
   }
 }
