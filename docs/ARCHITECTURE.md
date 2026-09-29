@@ -51,6 +51,8 @@ DIBBS publishes three complementary completed-day files. Sales Patriot intention
 
 The archive synchronizer discovers the newest complete triplet, downloads files atomically through `.part` files, and skips a day already marked as a complete archive. It does not rewrite historical days during routine operation.
 
+For demos or recovery on a constrained connection, `npm run sync:manifests` stages the newest seven published days from only the small index and batch files. These rows are marked `archive-manifest`, appear in the grid immediately, and remain eligible for the normal full-archive pass. The eventual PDF ZIP import atomically replaces the staged rows with PDF-derived details and working local document links.
+
 DIBBS does not expose the completed files while a day is still changing. For that gap, the live synchronizer:
 
 1. accepts the DOD consent screen and retains cookies independently per DIBBS host;
@@ -210,7 +212,9 @@ Filtering has three composable layers:
 2. Each Fast Grid column retains its quick substring input and has a funnel button that opens the Boolean filter builder preselected to that field.
 3. The filter builder combines typed conditions with either `AND` or `OR`. Text, numeric, and date fields expose appropriate operators, including relative conditions such as “close date is within the next 7 days.”
 
-The RFQ count and estimated bid value are recomputed from the final result across all three layers. “Save current filter as tab” stores the whole-table query, Boolean rule group, and quick column filters together in browser local storage. A saved tab behaves as a live filter view: while it is active, every filter change is persisted automatically. Selecting a tab restores the complete filter state immediately. Tabs can be duplicated into independent copies or deleted without modifying RFQ data.
+The RFQ count and estimated bid value are recomputed from the final result across all three layers. “Save current filter as tab” stores the whole-table query, Boolean rule group, quick column filters, and column widths together in browser local storage. A saved tab behaves as a live filter view: while it is active, every filter or width change is persisted automatically. **All RFQs** keeps its own width layout while still resetting filters and sorting. Selecting a tab restores its complete state immediately. Tabs can be created blank, duplicated into independent copies, or deleted without modifying RFQ data.
+
+Each tab can also be serialized into a versioned, URL-safe hash. Opening a shared link validates its fields, operators, column indexes, and size limits before adding it as a new local tab; the import payload is then removed from the address bar to prevent duplicate imports on refresh. The same `+` control accepts a pasted share URL. No server-side account or saved-view record is required.
 
 The Boolean builder expands to the table width and shifts the grid down while it is being edited. Approved parts use a lightweight table-native popout beside the selected NSN, without dimming or blocking the grid.
 

@@ -13,6 +13,7 @@
     "test": "tsx --test src/**/*.test.ts",
     "import": "tsx src/server/import-rfqs.ts",
     "sync": "tsx src/server/sync-rfqs.ts",
+    "sync:manifests": "tsx scripts/stage-dibbs-manifests.ts",
     "sync:today": "tsx src/server/sync-rfqs.ts --today-only"
   },
   "dependencies": {

@@ -46,11 +46,19 @@ The toolbar defaults to all stored dates. `From` and `To` are optional bounds. B
 Manual equivalents are available for operations and debugging:
 
 ```bash
+npm run sync:manifests               # stage the latest week immediately from the small index/batch files
+npm run sync:manifests -- --since 2026-09-07
 npm run sync                         # newest completed archive, then today
 npm run sync:today                   # today only
 npm run sync:today -- --max-new 10  # bounded smoke run
 npm run sync -- --archives-only
 ```
+
+`sync:manifests` is the demo-safe fast path. It downloads only each day's small fixed-width index and batch ZIP, makes those RFQs searchable immediately, and leaves the large PDF archives to finish in the background. A later full archive import replaces the staged metadata for that date with PDF-derived records.
+
+## Saved and shared views
+
+Every tab owns its filters and column widths, including **All RFQs**. Use the link button on a tab to copy a self-contained URL; opening that URL validates the embedded state, adds it as a local tab, and selects it without requiring an account. The `+` button creates a blank tab or imports a pasted shared-view URL.
 
 Set `DIBBS_SYNC_ENABLED=false` to disable the in-process timers. Intervals can be changed with `DIBBS_TODAY_INTERVAL_MINUTES` and `DIBBS_ARCHIVE_INTERVAL_MINUTES`; the manual/CLI backfill horizon is controlled by `DIBBS_ARCHIVE_DAYS` and defaults to `7`. Current-day result pages are fetched six at a time by default; tune that bounded fan-out with `DIBBS_PAGE_CONCURRENCY` (maximum `12`). DIBBS dates default to `America/New_York` and downloaded material lives under the ignored `data/dibbs/` directory.
 

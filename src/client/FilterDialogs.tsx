@@ -162,6 +162,75 @@ export function SaveViewPopover({ onSave, onClose }: { onSave: (name: string) =>
   );
 }
 
+export function AddViewPopover({
+  onCreate,
+  onImport,
+  onClose,
+}: {
+  onCreate: (name: string) => void;
+  onImport: (url: string) => boolean;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [sharedUrl, setSharedUrl] = useState("");
+  const [importError, setImportError] = useState(false);
+  useEscape(onClose);
+
+  const create = () => {
+    const trimmed = name.trim();
+    if (trimmed) onCreate(trimmed);
+  };
+  const importView = () => {
+    const imported = onImport(sharedUrl);
+    setImportError(!imported);
+  };
+
+  return (
+    <section className="add-view-popover" role="dialog" aria-labelledby="add-view-title">
+      <header>
+        <div>
+          <h2 id="add-view-title">Add filter tab</h2>
+          <span>Create an empty tab or import a shared view.</span>
+        </div>
+        <button className="popover-close-button" onClick={onClose} aria-label="Close add tab panel">×</button>
+      </header>
+      <div className="add-view-section">
+        <label htmlFor="new-view-name">New blank tab</label>
+        <div>
+          <input
+            id="new-view-name"
+            autoFocus
+            value={name}
+            maxLength={120}
+            placeholder="Aircraft parts expiring in a week"
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && create()}
+          />
+          <button className="primary-button" disabled={!name.trim()} onClick={create}>Create</button>
+        </div>
+      </div>
+      <div className="add-view-section">
+        <label htmlFor="shared-view-url">Shared view URL</label>
+        <div>
+          <input
+            id="shared-view-url"
+            value={sharedUrl}
+            placeholder="Paste an RFQ view link"
+            aria-invalid={importError || undefined}
+            onChange={(event) => {
+              setSharedUrl(event.target.value);
+              setImportError(false);
+            }}
+            onKeyDown={(event) => event.key === "Enter" && importView()}
+          />
+          <button className="secondary-button" disabled={!sharedUrl.trim()} onClick={importView}>Import</button>
+        </div>
+        {importError && <span className="add-view-error" role="alert">This link does not contain a valid RFQ view.</span>}
+      </div>
+    </section>
+  );
+}
+
 function normalizedGroup(group: FilterGroup): FilterGroup {
   return {
     conjunction: group.conjunction,

@@ -61,9 +61,15 @@ button.saved-view-tab { padding: 0 14px; cursor: pointer; }
 .duplicate-view-button { width: 25px; height: 100%; padding: 5px; border: 0; color: #8b95a2; background: transparent; cursor: pointer; }
 .duplicate-view-button:hover { color: #1f2c40; background: #eef1f4; }
 .duplicate-view-button svg { width: 14px; height: 14px; }
+.share-view-button { width: 25px; height: 100%; padding: 5px; border: 0; color: #8b95a2; background: transparent; cursor: pointer; }
+.share-view-button:hover { color: #875415; background: #fff7e9; }
+.share-view-button svg { width: 14px; height: 14px; }
+.add-tab-button { width: 29px; height: 29px; margin: 0 2px 3px 4px; flex: 0 0 auto; border: 1px solid #aeb6c1; border-radius: 2px; color: #465267; background: #fff; font: 500 19px/1 ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }
+.add-tab-button:hover, .add-tab-button.active { color: #875415; border-color: #b47b32; background: #fff9ee; }
 .save-tab-button { height: 33px; margin: 0 4px 1px 5px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; border: 0; color: #875415; background: transparent; font-size: 10px; font-weight: 800; cursor: pointer; }
 .save-tab-button:hover { color: #5f3809; }
 .save-tab-button svg { width: 15px; height: 15px; }
+.share-view-message { align-self: center; margin: 0 6px 8px 0; color: #667181; font: 700 9px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
 .whole-table-filter-row { height: 48px; padding: 7px 8px; display: flex; align-items: center; gap: 8px; background: #fff; border-bottom: 1px solid #cfd5dd; }
 .global-filter-input { height: 34px; min-width: 220px; flex: 1; display: flex; align-items: center; border: 1px solid #cbd1d9; border-radius: 4px; color: #818b98; background: #fff; }
 .global-filter-input:focus-within { border-color: #a4661a; box-shadow: 0 0 0 3px rgba(164,102,26,.1); }
@@ -225,6 +231,19 @@ body.column-resizing, body.column-resizing * { cursor: col-resize !important; us
 .save-view-popover > input:focus { border-color: #526074; }
 .save-view-popover footer { margin-top: 8px; display: flex; justify-content: flex-end; gap: 6px; }
 .save-view-popover footer button { height: 29px; border-radius: 1px; }
+.add-view-popover { position: fixed; z-index: 46; top: 104px; left: 8px; width: min(510px, calc(100vw - 16px)); border: 1px solid #526074; border-radius: 1px; color: #172238; background: #fff; box-shadow: 2px 3px 0 rgba(22,34,56,.12); }
+.add-view-popover > header { min-height: 45px; padding: 7px 8px 7px 11px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f5f6f8; border-bottom: 1px solid #aeb6c1; }
+.add-view-popover h2 { margin: 0; font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.add-view-popover header span { display: block; margin-top: 2px; color: #707b89; font-size: 10px; }
+.add-view-section { padding: 9px 10px 10px; border-bottom: 1px solid #d9dde3; }
+.add-view-section:last-child { border-bottom: 0; }
+.add-view-section > label { display: block; margin-bottom: 5px; color: #697483; font: 800 9px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; }
+.add-view-section > div { display: flex; align-items: stretch; gap: 6px; }
+.add-view-section input { min-width: 0; height: 30px; padding: 0 7px; flex: 1; border: 1px solid #aeb6c1; border-radius: 1px; color: #172238; background: #fff; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; outline: none; }
+.add-view-section input:focus { border-color: #526074; }
+.add-view-section input[aria-invalid="true"] { border-color: #a43a2d; }
+.add-view-section button { min-width: 64px; height: 30px; border-radius: 1px; }
+.add-view-error { display: block; margin-top: 5px; color: #a43a2d; font: 700 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .approved-parts-popover { position: fixed; z-index: 44; max-height: min(390px, calc(100vh - 16px)); display: flex; flex-direction: column; border: 1px solid #526074; border-radius: 1px; background: #fff; box-shadow: 2px 3px 0 rgba(22,34,56,.14); overflow: hidden; }
 .approved-parts-popover .parts-modal-head { min-height: 45px; padding: 7px 8px 7px 11px; align-items: center; gap: 12px; background: #f5f6f8; border-bottom-color: #aeb6c1; }
 .approved-parts-popover .parts-modal-head h2 { margin: 0; color: #172238; font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; }

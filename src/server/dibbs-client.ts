@@ -31,11 +31,31 @@ export class DibbsClient {
     destination: string,
     force = false,
     onProgress?: (received: number, total: number) => void,
+    retriesRemaining = 2,
   ): Promise<void> {
     if (!force && fs.existsSync(destination) && fs.statSync(destination).size > 0) return;
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     const temporaryPath = `${destination}.part`;
-    const response = await this.request(url, {}, 30 * 60_000);
+    if (force) fs.rmSync(temporaryPath, { force: true });
+    let offset = fileSize(temporaryPath);
+    const headers = new Headers();
+    if (offset > 0) headers.set("range", `bytes=${offset}-`);
+    let response = await this.request(url, { headers }, 30 * 60_000);
+
+    if (response.status === 416 && offset > 0) {
+      const remoteSize = totalFromContentRange(response.headers.get("content-range"));
+      await response.body?.cancel();
+      if (remoteSize === offset) {
+        fs.renameSync(temporaryPath, destination);
+        onProgress?.(offset, offset);
+        return;
+      }
+      // The remote archive changed or rejected this partial file. Preserve it for
+      // diagnosis and retry the immutable daily URL from byte zero.
+      fs.renameSync(temporaryPath, `${temporaryPath}.stale-${Date.now()}`);
+      offset = 0;
+      response = await this.request(url, {}, 30 * 60_000);
+    }
     if (!response.ok || !response.body) {
       throw new Error(`DIBBS returned ${response.status} for ${url}`);
     }
@@ -43,8 +63,13 @@ export class DibbsClient {
     if (contentType.includes("text/html")) {
       throw new Error(`Expected a file from DIBBS but received HTML for ${url}`);
     }
-    const total = Number(response.headers.get("content-length")) || 0;
-    let received = 0;
+    const range = parseContentRange(response.headers.get("content-range"));
+    const append = offset > 0 && response.status === 206 && range?.start === offset;
+    if (!append) offset = 0;
+    const responseLength = Number(response.headers.get("content-length")) || 0;
+    const total = range?.total || (append ? offset + responseLength : responseLength);
+    let received = offset;
+    onProgress?.(received, total);
     const counter = new Transform({
       transform(chunk, _encoding, callback) {
         received += chunk.length;
@@ -56,11 +81,26 @@ export class DibbsClient {
       await pipeline(
         Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),
         counter,
-        fs.createWriteStream(temporaryPath),
+        fs.createWriteStream(temporaryPath, { flags: append ? "a" : "w" }),
       );
+      const storedSize = fileSize(temporaryPath);
+      if (total > 0 && storedSize !== total) {
+        throw new Error(`Incomplete download for ${url}: received ${storedSize} of ${total} bytes`);
+      }
       fs.renameSync(temporaryPath, destination);
     } catch (error) {
-      fs.rmSync(temporaryPath, { force: true });
+      // Some DIBBS responses close abruptly after delivering the advertised
+      // number of bytes. Accept that complete file; otherwise retain the partial
+      // so the next scheduled run can resume it with a Range request.
+      const storedSize = fileSize(temporaryPath);
+      if (total > 0 && storedSize === total) {
+        fs.renameSync(temporaryPath, destination);
+        onProgress?.(storedSize, total);
+        return;
+      }
+      if (storedSize > 0 && retriesRemaining > 0) {
+        return this.download(url, destination, false, onProgress, retriesRemaining - 1);
+      }
       throw error;
     }
   }
@@ -153,6 +193,30 @@ export class DibbsClient {
       .map(([name, value]) => `${name}=${value}`)
       .join("; ");
   }
+}
+
+function fileSize(filePath: string) {
+  try {
+    return fs.statSync(filePath).size;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return 0;
+    throw error;
+  }
+}
+
+function parseContentRange(value: string | null) {
+  const match = value?.match(/^bytes (\d+)-(\d+)\/(\d+|\*)$/i);
+  if (!match) return null;
+  return {
+    start: Number(match[1]),
+    end: Number(match[2]),
+    total: match[3] === "*" ? 0 : Number(match[3]),
+  };
+}
+
+function totalFromContentRange(value: string | null) {
+  const match = value?.match(/^bytes \*\/(\d+)$/i);
+  return match ? Number(match[1]) : 0;
 }
 
 export function hiddenFormFields(html: string): URLSearchParams {

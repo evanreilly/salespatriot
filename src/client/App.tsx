@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { ApprovedPart, Rfq, RfqDay, RfqListResponse, SyncProgress, SyncStatus } from "../shared/rfq";
 import { FastGrid, type PopoverAnchor } from "./FastGrid";
-import { FilterBuilderPanel, SaveViewPopover } from "./FilterDialogs";
+import { AddViewPopover, FilterBuilderPanel, SaveViewPopover } from "./FilterDialogs";
 import {
   applyRfqFilters,
   cloneFilterGroup,
@@ -22,9 +22,11 @@ import {
   type SavedFilterView,
 } from "./filters";
 import { defaultColumnWidths, normalizeColumnWidths, placeCellPopover } from "./gridLayout";
-import { parseSavedViews, updateSavedViewState } from "./savedViews";
+import { parseColumnWidths, parseSavedViews, updateSavedViewState } from "./savedViews";
+import { createSharedViewUrl, parseSharedViewUrl, withoutSharedViewHash } from "./viewSharing";
 
 const savedViewsKey = "sales-patriot.saved-filter-views.v1";
+const allRfqsColumnWidthsKey = "sales-patriot.all-rfqs-column-widths.v1";
 
 export function App() {
   const [days, setDays] = useState<RfqDay[]>([]);
@@ -42,11 +44,14 @@ export function App() {
   const [globalQuery, setGlobalQuery] = useState("");
   const [filterGroup, setFilterGroup] = useState<FilterGroup>(emptyFilterGroup);
   const [columnFilters, setColumnFilters] = useState<Record<number, string>>({});
-  const [columnWidths, setColumnWidths] = useState(defaultColumnWidths);
+  const [allRfqsColumnWidths, setAllRfqsColumnWidths] = useState(loadAllRfqsColumnWidths);
+  const [columnWidths, setColumnWidths] = useState(() => [...allRfqsColumnWidths]);
   const [savedViews, setSavedViews] = useState<SavedFilterView[]>(loadSavedViews);
   const [activeViewId, setActiveViewId] = useState("all");
   const [builderRequest, setBuilderRequest] = useState<{ field?: FilterField } | null>(null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [addViewOpen, setAddViewOpen] = useState(false);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [gridResetVersion, setGridResetVersion] = useState(0);
   const [gridViewVersion, setGridViewVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,6 +66,27 @@ export function App() {
   const latestShownDay = days.find(
     (day) => (!fromDate || day.date >= fromDate) && (!toDate || day.date <= toDate),
   );
+
+  const applySavedView = useCallback((view: SavedFilterView) => {
+    setActiveViewId(view.id);
+    setGlobalQuery(view.globalQuery);
+    setFilterGroup(cloneFilterGroup(view.group));
+    setColumnFilters({ ...view.columnFilters });
+    setColumnWidths(normalizeColumnWidths(view.columnWidths));
+    setBuilderRequest(null);
+    setSaveViewOpen(false);
+    setAddViewOpen(false);
+    setGridViewVersion((version) => version + 1);
+  }, []);
+
+  const importSharedView = useCallback((url: string) => {
+    const shared = parseSharedViewUrl(url, window.location.href);
+    if (!shared) return false;
+    const imported: SavedFilterView = { ...shared, id: createId(), name: shared.name.trim() };
+    setSavedViews((current) => [...current, imported]);
+    applySavedView(imported);
+    return true;
+  }, [applySavedView]);
 
   const refreshMetadata = useCallback(async () => {
     const [dayResponse, statusResponse] = await Promise.all([
@@ -126,7 +152,20 @@ export function App() {
   }, [savedViews]);
 
   useEffect(() => {
-    if (activeViewId === "all") return;
+    const importLocationView = () => {
+      if (!importSharedView(window.location.href)) return;
+      window.history.replaceState(window.history.state, "", withoutSharedViewHash(window.location.href));
+    };
+    importLocationView();
+    window.addEventListener("hashchange", importLocationView);
+    return () => window.removeEventListener("hashchange", importLocationView);
+  }, [importSharedView]);
+
+  useEffect(() => {
+    if (activeViewId === "all") {
+      setAllRfqsColumnWidths(normalizeColumnWidths(columnWidths));
+      return;
+    }
     setSavedViews((current) => updateSavedViewState(current, activeViewId, {
       globalQuery,
       group: filterGroup,
@@ -134,6 +173,10 @@ export function App() {
       columnWidths,
     }));
   }, [activeViewId, globalQuery, filterGroup, columnFilters, columnWidths]);
+
+  useEffect(() => {
+    localStorage.setItem(allRfqsColumnWidthsKey, JSON.stringify(allRfqsColumnWidths));
+  }, [allRfqsColumnWidths]);
 
   const tableRfqs = useMemo(
     () => applyRfqFilters(rfqs, globalQuery, filterGroup),
@@ -147,21 +190,15 @@ export function App() {
     setGlobalQuery("");
     setFilterGroup(emptyFilterGroup());
     setColumnFilters({});
-    setColumnWidths(defaultColumnWidths());
+    setColumnWidths(normalizeColumnWidths(allRfqsColumnWidths));
     setBuilderRequest(null);
     setSaveViewOpen(false);
+    setAddViewOpen(false);
     setGridResetVersion((version) => version + 1);
   };
 
   const selectSavedView = (view: SavedFilterView) => {
-    setActiveViewId(view.id);
-    setGlobalQuery(view.globalQuery);
-    setFilterGroup(cloneFilterGroup(view.group));
-    setColumnFilters({ ...view.columnFilters });
-    setColumnWidths(normalizeColumnWidths(view.columnWidths));
-    setBuilderRequest(null);
-    setSaveViewOpen(false);
-    setGridViewVersion((version) => version + 1);
+    applySavedView(view);
   };
 
   const saveCurrentView = (name: string) => {
@@ -194,6 +231,39 @@ export function App() {
     };
     setSavedViews((current) => [...current, duplicate]);
     selectSavedView(duplicate);
+  };
+
+  const createBlankView = (name: string) => {
+    const view: SavedFilterView = {
+      id: createId(),
+      name,
+      globalQuery: "",
+      group: emptyFilterGroup(),
+      columnFilters: {},
+      columnWidths: defaultColumnWidths(),
+    };
+    setSavedViews((current) => [...current, view]);
+    applySavedView(view);
+  };
+
+  const copySharedView = async (view: SavedFilterView) => {
+    const snapshot = activeViewId === view.id ? {
+      ...view,
+      globalQuery,
+      group: cloneFilterGroup(filterGroup),
+      columnFilters: { ...columnFilters },
+      columnWidths: [...columnWidths],
+    } : view;
+    try {
+      await copyText(createSharedViewUrl(snapshot, window.location.href));
+      const message = `Copied ${view.name}`;
+      setShareMessage(message);
+      window.setTimeout(() => setShareMessage((current) => current === message ? null : current), 2_400);
+    } catch {
+      const message = "Could not copy link";
+      setShareMessage(message);
+      window.setTimeout(() => setShareMessage((current) => current === message ? null : current), 2_400);
+    }
   };
 
   const syncLatest = async () => {
@@ -277,21 +347,46 @@ export function App() {
         )}
 
         <nav className="saved-view-tabs" aria-label="Saved filter tabs">
-          <button className={activeViewId === "all" ? "saved-view-tab active" : "saved-view-tab"} onClick={selectAllView}>
-            All RFQs
-          </button>
+          <span className={activeViewId === "all" ? "saved-view-tab active" : "saved-view-tab"}>
+            <button onClick={selectAllView}>All RFQs</button>
+            <button
+              className="share-view-button"
+              onClick={() => copySharedView({
+                id: "all",
+                name: "All RFQs shared view",
+                globalQuery: "",
+                group: emptyFilterGroup(),
+                columnFilters: {},
+                columnWidths: [...allRfqsColumnWidths],
+              })}
+              aria-label="Copy All RFQs view link"
+              title="Copy share link"
+            ><ShareIcon /></button>
+          </span>
           {savedViews.map((view) => (
             <span className={activeViewId === view.id ? "saved-view-tab active" : "saved-view-tab"} key={view.id}>
               <button onClick={() => selectSavedView(view)}>{view.name}</button>
+              <button className="share-view-button" onClick={() => copySharedView(view)} aria-label={`Copy ${view.name} view link`} title="Copy share link"><ShareIcon /></button>
               <button className="duplicate-view-button" onClick={() => duplicateSavedView(view)} aria-label={`Duplicate ${view.name} tab`} title="Duplicate tab"><CopyIcon /></button>
               <button className="delete-view-button" onClick={() => deleteSavedView(view.id)} aria-label={`Delete ${view.name} tab`}>×</button>
             </span>
           ))}
-          <button className="save-tab-button" onClick={() => setSaveViewOpen(true)}>
+          <button
+            className={addViewOpen ? "add-tab-button active" : "add-tab-button"}
+            onClick={() => {
+              setAddViewOpen((open) => !open);
+              setSaveViewOpen(false);
+            }}
+            aria-label="Add filter tab"
+            title="Add filter tab"
+          >+</button>
+          <button className="save-tab-button" onClick={() => { setSaveViewOpen(true); setAddViewOpen(false); }}>
             <SaveIcon /> Save current filter as tab
           </button>
+          {shareMessage && <span className="share-view-message" role="status">{shareMessage}</span>}
         </nav>
         {saveViewOpen && <SaveViewPopover onSave={saveCurrentView} onClose={() => setSaveViewOpen(false)} />}
+        {addViewOpen && <AddViewPopover onCreate={createBlankView} onImport={importSharedView} onClose={() => setAddViewOpen(false)} />}
 
         <section className="whole-table-filter-row" aria-label="Whole table filtering">
           <label className="global-filter-input">
@@ -767,6 +862,30 @@ function CopyIcon() {
   return <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="6.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 13.5h-1v-10h10v1" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>;
 }
 
+function ShareIcon() {
+  return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.2 12.8 12.8 7.2M8.1 5.2l1.5-1.5a3.3 3.3 0 0 1 4.7 4.7l-1.5 1.5M11.9 14.8l-1.5 1.5a3.3 3.3 0 0 1-4.7-4.7l1.5-1.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through for browsers that expose Clipboard but block it by policy.
+    }
+  }
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.append(textArea);
+  textArea.select();
+  const copied = document.execCommand("copy");
+  textArea.remove();
+  if (!copied) throw new Error("Copy failed");
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) {
@@ -839,5 +958,13 @@ function loadSavedViews(): SavedFilterView[] {
     return parseSavedViews(localStorage.getItem(savedViewsKey));
   } catch {
     return [];
+  }
+}
+
+function loadAllRfqsColumnWidths() {
+  try {
+    return parseColumnWidths(localStorage.getItem(allRfqsColumnWidthsKey));
+  } catch {
+    return defaultColumnWidths();
   }
 }

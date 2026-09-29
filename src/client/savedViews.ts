@@ -38,6 +38,14 @@ export function parseSavedViews(serialized: string | null): SavedFilterView[] {
   }
 }
 
+export function parseColumnWidths(serialized: string | null) {
+  try {
+    return normalizeColumnWidths(JSON.parse(serialized ?? "[]"));
+  } catch {
+    return normalizeColumnWidths([]);
+  }
+}
+
 function cloneGroup(group: FilterGroup): FilterGroup {
   return {
     conjunction: group.conjunction,

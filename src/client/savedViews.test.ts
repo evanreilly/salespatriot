@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defaultColumnWidths } from "./gridLayout.js";
-import { parseSavedViews, updateSavedViewState } from "./savedViews.js";
+import { parseColumnWidths, parseSavedViews, updateSavedViewState } from "./savedViews.js";
 
 const legacyView = {
   id: "legacy",
@@ -46,4 +46,9 @@ test("autosaving width changes updates only the active saved tab", () => {
 test("malformed saved-view storage fails safely", () => {
   assert.deepEqual(parseSavedViews("not json"), []);
   assert.deepEqual(parseSavedViews(JSON.stringify([{ name: "incomplete" }])), []);
+});
+
+test("the All RFQs view restores a normalized persisted column layout", () => {
+  assert.deepEqual(parseColumnWidths(JSON.stringify([135, 287])).slice(0, 3), [135, 287, 200]);
+  assert.deepEqual(parseColumnWidths("not json"), defaultColumnWidths());
 });
