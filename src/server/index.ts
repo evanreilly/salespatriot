@@ -4,11 +4,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import { db, type RfqRow } from "./db.js";
-import { dibbsArchiveDays, port, projectRoot } from "./config.js";
+import { appReadOnly, bindAddress, port, projectRoot } from "./config.js";
 import { serializeRfq } from "./serialize.js";
-import { syncPublishedArchives, syncToday } from "./dibbs-sync.js";
-import { getSyncProgress, runSyncExclusive } from "./sync-lock.js";
-import { startDibbsScheduler } from "./sync-scheduler.js";
 
 const app = express();
 
@@ -74,47 +71,7 @@ app.get("/api/sync/status", (_request, response) => {
        LIMIT 1`,
     )
     .get();
-  response.json({ data: latest ?? null, progress: getSyncProgress() });
-});
-
-app.post("/api/sync/latest", async (_request, response) => {
-  if (getSyncProgress().active) {
-    response.status(409).json({ error: "A DIBBS sync is already running" });
-    return;
-  }
-  void runSyncExclusive("Sync latest week", async (report) => ({
-    archive: await syncPublishedArchives({ limit: dibbsArchiveDays, onProgress: report }),
-    live: await syncToday({ onProgress: report }),
-  })).catch((error) => console.error("DIBBS sync failed:", error));
-  response.status(202).json({ data: { started: true } });
-});
-
-app.post("/api/sync/resync", async (request, response) => {
-  const parsed = z.object({ date: z.iso.date() }).safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "A valid date is required" });
-    return;
-  }
-  const imported = db
-    .prepare("SELECT source_kind AS sourceKind FROM imports WHERE archive_date = ?")
-    .get(parsed.data.date) as { sourceKind: string } | undefined;
-  if (!imported) {
-    response.status(404).json({ error: "That date has not been imported" });
-    return;
-  }
-  if (imported.sourceKind === "manual") {
-    response.status(409).json({ error: "Manual records do not have a DIBBS source to re-sync" });
-    return;
-  }
-  if (getSyncProgress().active) {
-    response.status(409).json({ error: "A DIBBS sync is already running" });
-    return;
-  }
-  void runSyncExclusive(`Re-sync ${parsed.data.date}`, (report) => imported.sourceKind === "archive"
-    ? syncPublishedArchives({ date: parsed.data.date, force: true, onProgress: report })
-    : syncToday({ date: parsed.data.date, force: true, onProgress: report }))
-    .catch((error) => console.error("DIBBS re-sync failed:", error));
-  response.status(202).json({ data: { started: true } });
+  response.json({ data: latest ?? null });
 });
 
 app.get("/api/rfqs", (request, response) => {
@@ -190,6 +147,10 @@ app.get("/api/rfqs/:id/approved-parts", (request, response) => {
 });
 
 app.post("/api/rfqs", (request, response) => {
+  if (appReadOnly) {
+    response.status(403).json({ error: "This deployment is read-only" });
+    return;
+  }
   const parsed = rfqInput.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ error: "Invalid RFQ", details: parsed.error.issues });
@@ -228,6 +189,10 @@ app.post("/api/rfqs", (request, response) => {
 });
 
 app.patch("/api/rfqs/:id", (request, response) => {
+  if (appReadOnly) {
+    response.status(403).json({ error: "This deployment is read-only" });
+    return;
+  }
   const id = Number(request.params.id);
   const current = db.prepare("SELECT * FROM rfqs WHERE id = ?").get(id) as
     | RfqRow
@@ -289,6 +254,10 @@ app.patch("/api/rfqs/:id", (request, response) => {
 });
 
 app.delete("/api/rfqs/:id", (request, response) => {
+  if (appReadOnly) {
+    response.status(403).json({ error: "This deployment is read-only" });
+    return;
+  }
   const result = db.prepare("DELETE FROM rfqs WHERE id = ?").run(Number(request.params.id));
   if (result.changes === 0) {
     response.status(404).json({ error: "RFQ not found" });
@@ -343,15 +312,18 @@ app.get("/api/rfqs/:id/pdf", (request, response) => {
   response.on("close", () => unzip.kill());
 });
 
+app.use("/api", (_request, response) => {
+  response.status(404).json({ error: "API route not found" });
+});
+
 const webDist = path.join(projectRoot, "dist");
 if (fs.existsSync(webDist)) {
   app.use(express.static(webDist));
   app.use((_request, response) => response.sendFile(path.join(webDist, "index.html")));
 }
 
-app.listen(port, () => {
-  console.log(`Sales Patriot API listening on http://localhost:${port}`);
-  startDibbsScheduler();
+app.listen(port, bindAddress, () => {
+  console.log(`Sales Patriot listening on http://${bindAddress}:${port}`);
 });
 
 function ensureManualImport(archiveDate: string): number {

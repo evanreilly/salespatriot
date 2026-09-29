@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
-import type { ApprovedPart, Rfq, RfqDay, RfqListResponse, SyncProgress, SyncStatus } from "../shared/rfq";
+import type { ApprovedPart, Rfq, RfqDay, RfqListResponse, SyncStatus } from "../shared/rfq";
 import { FastGrid, type PopoverAnchor } from "./FastGrid";
 import { BuyerTagKey, BuyerTreemapPanel } from "./BuyerTreemap";
 import { buildBuyerInsights, buyerInsightMap } from "./buyerInsights";
@@ -26,6 +26,7 @@ import {
 import { defaultColumnWidths, normalizeColumnWidths, placeCellPopover } from "./gridLayout";
 import { parseColumnWidths, parseSavedViews, updateSavedViewState } from "./savedViews";
 import { createSharedViewUrl, parseSharedViewUrl, withoutSharedViewHash } from "./viewSharing";
+import { appPath } from "./paths";
 
 const savedViewsKey = "sales-patriot.saved-filter-views.v1";
 const allRfqsColumnWidthsKey = "sales-patriot.all-rfqs-column-widths.v1";
@@ -59,15 +60,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<SyncStatus | null>(null);
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
-  const [syncing, setSyncing] = useState<"latest" | "resync" | null>(null);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [dataVersion, setDataVersion] = useState(0);
-  const syncWasActive = useRef(false);
   const dayUpdateVersion = days.map((day) => `${day.date}:${day.lastCheckedAt}`).join("|");
-  const latestShownDay = days.find(
-    (day) => (!fromDate || day.date >= fromDate) && (!toDate || day.date <= toDate),
-  );
 
   const applySavedView = useCallback((view: SavedFilterView) => {
     setActiveViewId(view.id);
@@ -91,23 +84,11 @@ export function App() {
 
   const refreshMetadata = useCallback(async () => {
     const [dayResponse, statusResponse] = await Promise.all([
-      fetchJson<{ data: RfqDay[] }>("/api/days"),
-      fetchJson<{ data: SyncStatus | null; progress: SyncProgress }>("/api/sync/status"),
+      fetchJson<{ data: RfqDay[] }>(appPath("/api/days")),
+      fetchJson<{ data: SyncStatus | null }>(appPath("/api/sync/status")),
     ]);
     setDays(dayResponse.data);
     setLastSync(statusResponse.data);
-    setSyncProgress(statusResponse.progress);
-    if (statusResponse.progress.active) {
-      setSyncing(statusResponse.progress.operation.startsWith("Re-sync") ? "resync" : "latest");
-      syncWasActive.current = true;
-    } else {
-      setSyncing(null);
-      if (syncWasActive.current) {
-        syncWasActive.current = false;
-        setDataVersion((version) => version + 1);
-        setSyncMessage("Sync finished");
-      }
-    }
     if (dayResponse.data.length === 0) setLoading(false);
   }, []);
 
@@ -122,10 +103,8 @@ export function App() {
         });
     };
     refreshDays();
-    const timer = window.setInterval(refreshDays, 2_000);
     return () => {
       active = false;
-      window.clearInterval(timer);
     };
   }, [refreshMetadata]);
 
@@ -138,13 +117,13 @@ export function App() {
     const params = new URLSearchParams();
     if (fromDate) params.set("from", fromDate);
     if (toDate) params.set("to", toDate);
-    fetchJson<RfqListResponse>(`/api/rfqs${params.size ? `?${params}` : ""}`)
+    fetchJson<RfqListResponse>(appPath(`/api/rfqs${params.size ? `?${params}` : ""}`))
       .then(({ data }) => {
         setRfqs(data);
       })
       .catch((cause) => setError(errorMessage(cause)))
       .finally(() => setLoading(false));
-  }, [fromDate, toDate, dayUpdateVersion, dataVersion]);
+  }, [fromDate, toDate, dayUpdateVersion]);
 
   useEffect(() => {
     localStorage.setItem(savedViewsKey, JSON.stringify(savedViews));
@@ -270,38 +249,6 @@ export function App() {
     }
   };
 
-  const syncLatest = async () => {
-    setSyncing("latest");
-    setSyncMessage(null);
-    try {
-      await fetchJson("/api/sync/latest", { method: "POST" });
-      await refreshMetadata();
-      setSyncMessage("Sync started");
-    } catch (cause) {
-      setSyncMessage(errorMessage(cause));
-      setSyncing(null);
-    }
-  };
-
-  const resyncLatestShownDay = async () => {
-    const date = latestShownDay?.date;
-    if (!date) return;
-    setSyncing("resync");
-    setSyncMessage(null);
-    try {
-      await fetchJson("/api/sync/resync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date }),
-      });
-      await refreshMetadata();
-      setSyncMessage(`Re-syncing ${date}`);
-    } catch (cause) {
-      setSyncMessage(errorMessage(cause));
-      setSyncing(null);
-    }
-  };
-
   return (
     <div className="app-frame">
       <main>
@@ -327,28 +274,8 @@ export function App() {
             <span title={lastSync ? formatSyncTimestamp(lastSync.completedAt) : undefined}>
               {lastSync?.status === "failed" ? "Last sync failed" : "Last synced"} {lastSync ? formatCompactTimestamp(lastSync.completedAt) : "never"}
             </span>
-            <button className="sync-button" disabled={syncing !== null} onClick={syncLatest}>
-              {syncing === "latest" ? "Syncing…" : "Sync latest"}
-            </button>
-            <button
-              className="sync-button"
-              disabled={syncing !== null || !latestShownDay}
-              onClick={resyncLatestShownDay}
-              title={`Re-download and replace ${latestShownDay?.date || "the latest stored day"}`}
-            >
-              {syncing === "resync" ? "Re-syncing…" : "Re-sync"}
-            </button>
-            {syncMessage && <span className="sync-message">{syncMessage}</span>}
           </div>
         </section>
-
-        {syncProgress?.active && (
-          <section className="sync-progress-row" aria-live="polite" aria-label="Synchronization progress">
-            <span>{syncProgress.message || syncProgress.operation}</span>
-            <progress value={syncProgress.current} max={Math.max(syncProgress.total, 1)} />
-            <strong>{formatProgress(syncProgress.current, syncProgress.total)}</strong>
-          </section>
-        )}
 
         <nav className="saved-view-tabs" aria-label="Saved filter tabs">
           <span className={activeViewId === "all" ? "saved-view-tab active" : "saved-view-tab"}>
@@ -584,7 +511,7 @@ function RfqPreviewPopover({
       </div>
 
       <footer className="rfq-preview-foot">
-        <a href={`/api/rfqs/${rfq.id}/pdf`} target="_blank" rel="noreferrer">
+        <a href={appPath(`/api/rfqs/${rfq.id}/pdf`)} target="_blank" rel="noreferrer">
           Source PDF <ArrowUpRight />
         </a>
         <div>
@@ -618,7 +545,7 @@ function ApprovedPartsPopover({
     setParts([]);
     setError(null);
     setLoading(true);
-    fetch(`/api/rfqs/${rfq.id}/approved-parts`, { signal: controller.signal })
+    fetch(appPath(`/api/rfqs/${rfq.id}/approved-parts`), { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Request failed (${response.status})`);
         return response.json() as Promise<{ data: ApprovedPart[] }>;
@@ -695,7 +622,7 @@ function ApprovedPartsPopover({
 
         <div className="parts-modal-foot">
           <span>{parts.length ? `${parts.length} approved ${parts.length === 1 ? "part" : "parts"}` : "Source: RFQ Section B"}</span>
-          <a href={`/api/rfqs/${rfq.id}/pdf`} target="_blank" rel="noreferrer">Verify in source PDF <ArrowUpRight /></a>
+          <a href={appPath(`/api/rfqs/${rfq.id}/pdf`)} target="_blank" rel="noreferrer">Verify in source PDF <ArrowUpRight /></a>
         </div>
       </section>
   );
@@ -846,7 +773,7 @@ function RfqDetailsPanel({
 
       <footer className="full-details-foot">
         <span>Updated {formatCompactTimestamp(rfq.updatedAt)}</span>
-        <a href={`/api/rfqs/${rfq.id}/pdf`} target="_blank" rel="noreferrer">
+        <a href={appPath(`/api/rfqs/${rfq.id}/pdf`)} target="_blank" rel="noreferrer">
           Open source PDF <ArrowUpRight />
         </a>
       </footer>
@@ -957,11 +884,6 @@ function formatCompactTimestamp(value: string) {
 function formatSyncTimestamp(value: string) {
   const date = parseSqliteTimestamp(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function formatProgress(current: number, total: number) {
-  if (!total) return "—";
-  return `${Math.min(100, Math.round((current / total) * 100))}%`;
 }
 
 function parseSqliteTimestamp(value: string) {

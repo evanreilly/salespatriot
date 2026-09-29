@@ -25,8 +25,7 @@ flowchart LR
     UI -->|open source PDF| API
     API -->|unzip -p entry or file stream| Docs[Local source documents]
 
-    Timer[In-process timer] --> Coordinator[Single-flight sync coordinator]
-    Buttons[Sync latest / Re-sync] --> Coordinator
+    CLI[Explicit terminal sync] --> Coordinator[Single-flight sync coordinator]
     Bootstrap[Terminal demo bootstrap] -->|completed archive| Importer
     DIBBS[DIBBS] -->|CA PDF ZIP + IN index + BQ batch ZIP| Coordinator
     DIBBS -->|parallel resumable curl| Bootstrap
@@ -66,7 +65,7 @@ DIBBS does not expose the completed files while a day is still changing. For tha
 5. compares solicitation numbers with locally downloaded documents and fetches only missing PDFs;
 6. converts those PDFs with the same parser and upserts them in 20-document transactions, allowing richer fields to appear during a long run and a restarted process to resume from durable progress.
 
-When the next completed archive appears, its import replaces that date's live rows and removes the temporary live-document directory. Portal requests have a 30-second deadline, large atomic file transfers have a 30-minute deadline, transient server responses are retried, and only one scheduled or button-triggered synchronization may run at once.
+When the next completed archive is imported, it replaces that date's live rows and removes the temporary live-document directory. Portal requests have a 30-second deadline, large atomic file transfers have a 30-minute deadline, transient server responses are retried, and only one terminal synchronization may run at once.
 
 ## Archive ingestion
 
@@ -245,6 +244,4 @@ Fast Grid receives the complete row store only when the API dataset changes. Fil
 
 ## Scheduling and stability
 
-The API process runs a single-flight scheduler. The live check defaults to hourly; archive discovery defaults to every six hours and examines the configured archive horizon (17 published days by default). Startup checks SQLite first and skips the live scrape when that date has a successful sync newer than the configured interval. A routine archive check skips each finalized day, and a routine live check downloads only PDFs not already local. If the process stops mid-run, staged rows and completed 20-document batches remain durable and the next due run resumes with the missing documents. Historical data therefore stays stable, and refreshing the browser never starts a job.
-
-`Sync latest` checks the configured published-archive horizon, skips dates already complete, and then invokes the current-day operation. `Re-sync` is deliberately separate and explicit: it re-downloads and replaces only the newest stored day inside the toolbar's current range. The active operation publishes phase/current/total progress in memory for the toolbar, while every attempt is recorded in `sync_runs`; the latest completed run feeds the “Last synced” reading.
+The API process is intentionally read-only with respect to synchronization: it exposes no sync endpoints and starts no scheduler. Operators run the single-flight CLI manually. Routine archive imports skip finalized days, while a live run downloads only PDFs not already local. If a CLI process stops mid-run, staged rows and completed 20-document batches remain durable and the next run resumes with the missing documents. Refreshing the browser can never start a download; completed attempts remain recorded in `sync_runs` for the “Last synced” reading.

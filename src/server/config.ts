@@ -5,8 +5,10 @@ export const dataDir = process.env.DATA_DIR ?? path.join(projectRoot, "data");
 export const databasePath =
   process.env.DATABASE_PATH ?? path.join(dataDir, "salespatriot.sqlite");
 export const port = Number(process.env.PORT ?? 3001);
+export const bindAddress = process.env.BIND_ADDRESS ?? "127.0.0.1";
 export const dibbsDataDir = process.env.DIBBS_DATA_DIR ?? path.join(dataDir, "dibbs");
 export const dibbsSyncEnabled = process.env.DIBBS_SYNC_ENABLED !== "false";
+export const appReadOnly = process.env.APP_READ_ONLY === "true";
 export const dibbsTodayIntervalMinutes = Number(process.env.DIBBS_TODAY_INTERVAL_MINUTES ?? 60);
 export const dibbsArchiveIntervalMinutes = Number(process.env.DIBBS_ARCHIVE_INTERVAL_MINUTES ?? 360);
 export const dibbsArchiveDays = Number(process.env.DIBBS_ARCHIVE_DAYS ?? 17);

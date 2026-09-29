@@ -22,7 +22,7 @@
   "dependencies": {
     "better-sqlite3": "^12.4.1",
     "express": "^5.1.0",
-    "fast-grid": "github:gabrielpetersson/fast-grid#21a7ee23c87e6c027361f0aab3dbc29d32df630b",
+    "fast-grid": "https://github.com/gabrielpetersson/fast-grid/archive/21a7ee23c87e6c027361f0aab3dbc29d32df630b.tar.gz",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^4.1.11"

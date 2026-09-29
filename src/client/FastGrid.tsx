@@ -11,6 +11,7 @@ import {
 } from "./gridLayout";
 import { gridRows, rfqCellValues } from "./gridData";
 import { sortRuleKey, type SortRule } from "./gridSort";
+import { appPath } from "./paths";
 
 const headers = [
   "Solicitation",
@@ -583,7 +584,7 @@ function decorateSolicitationCells(grid: Grid, rfqs: Rfq[]) {
       link.addEventListener("click", (event) => event.stopPropagation());
       cell.el.appendChild(link);
     }
-    link.href = `/api/rfqs/${rfq.id}/pdf`;
+    link.href = appPath(`/api/rfqs/${rfq.id}/pdf`);
     link.title = `Open ${rfq.solicitationNumber} PDF`;
     link.setAttribute("aria-label", link.title);
   }

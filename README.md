@@ -56,17 +56,17 @@ Archives already downloaded by another machine or tool can be copied into one di
 npm run import:directory -- /path/to/downloaded-dibbs-files
 ```
 
-Keep the terminal bootstrap as the only synchronizer while it runs; start the app afterward, or run the app with `DIBBS_SYNC_ENABLED=false npm run dev`. Budget several gigabytes of free disk space because a single completed-day archive can approach or exceed 1 GB. Rows from the small manifests appear first, but buyer, supply-chain, NAICS, and local PDF details arrive only after that day's full archive ingestion finishes.
+Budget several gigabytes of free disk space because a single completed-day archive can approach or exceed 1 GB. Rows from the small manifests appear first, but buyer, supply-chain, NAICS, and local PDF details arrive only after that day's full archive ingestion finishes.
 
 ## DIBBS synchronization
 
-The API starts an incremental synchronizer by default. It checks the current DIBBS day at most once an hour and the completed-archive listing every six hours. A fresh completed sync in SQLite suppresses redundant startup work, while an interrupted live run resumes from solicitation numbers already committed in small batches. Automatic checks never replace a completed archive day:
+Synchronization is an explicit terminal operation, not an in-application background job. The web process has no scheduler or sync endpoints, so browsing the public demo cannot start a large DIBBS transfer. CLI runs resume from solicitation numbers already committed in small batches and never replace a completed archive day unless explicitly forced:
 
 - current-day searches stage each result page immediately, then download only PDFs not already local and commit enriched records every 20 documents so the grid updates throughout a long run;
 - completed archives are skipped once their PDF ZIP, fixed-width index, and batch ZIP have been successfully ingested;
-- the explicit **Re-sync** button is the only automatic path that re-downloads and replaces an existing day.
+- a forced CLI import is the only path that re-downloads and replaces an existing day.
 
-The toolbar defaults to all stored dates. `From` and `To` are optional bounds. Both the scheduled archive pass and **Sync latest** fill any missing archives in the configured backfill horizon, skipping finalized days, and then check today. A progress row reports the current archive download, PDF parsing, live-page scan, or live-PDF download. **Re-sync** refreshes only the newest stored day inside the current range. The toolbar also reports the most recently completed sync.
+The toolbar defaults to all stored dates. `From` and `To` are optional bounds, and the toolbar reports the most recently completed terminal sync.
 
 Manual equivalents are available for operations and debugging:
 
@@ -98,7 +98,7 @@ cloudflared tunnel --url http://localhost:5173 --no-autoupdate
 
 Vite is configured to accept `*.trycloudflare.com` hosts. Quick Tunnel URLs are temporary and should not be treated as production deployment URLs.
 
-Set `DIBBS_SYNC_ENABLED=false` to disable the in-process timers. Intervals can be changed with `DIBBS_TODAY_INTERVAL_MINUTES` and `DIBBS_ARCHIVE_INTERVAL_MINUTES`; the manual/CLI backfill horizon is controlled by `DIBBS_ARCHIVE_DAYS` and defaults to `17` published archives (roughly three calendar weeks). Current-day result pages are fetched six at a time by default; tune that bounded fan-out with `DIBBS_PAGE_CONCURRENCY` (maximum `12`). DIBBS dates default to `America/New_York` and downloaded material lives under the ignored `data/dibbs/` directory.
+The manual/CLI backfill horizon is controlled by `DIBBS_ARCHIVE_DAYS` and defaults to `17` published archives (roughly three calendar weeks). Current-day result pages are fetched six at a time by default; tune that bounded fan-out with `DIBBS_PAGE_CONCURRENCY` (maximum `12`). DIBBS dates default to `America/New_York` and downloaded material lives under the ignored `data/dibbs/` directory.
 
 ## Production build
 
@@ -116,8 +116,6 @@ The production server serves both the API and built client at <http://localhost:
 | `GET` | `/api/days` | Imported days, counts, source type, and last check |
 | `GET` | `/api/rfqs?from=YYYY-MM-DD&to=YYYY-MM-DD` | RFQs in an optional date range; no bounds returns all |
 | `GET` | `/api/sync/status` | Last completed synchronization |
-| `POST` | `/api/sync/latest` | Incrementally fetch the newest archive and current day |
-| `POST` | `/api/sync/resync` | Explicitly replace one stored DIBBS day |
 | `GET` | `/api/rfqs/:id` | One RFQ |
 | `GET` | `/api/rfqs/:id/approved-parts` | Approved CAGE and part-number rows |
 | `POST` | `/api/rfqs` | Create an RFQ |
