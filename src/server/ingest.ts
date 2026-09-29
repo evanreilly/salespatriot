@@ -242,7 +242,7 @@ async function loadManifest(indexPath?: string, batchPath?: string) {
   return manifests;
 }
 
-async function parsePdf(filePath: string) {
+export async function parsePdf(filePath: string) {
   const { stdout } = await execFileAsync(
     "pdftotext",
     ["-layout", "-f", "1", "-l", "12", filePath, "-"],

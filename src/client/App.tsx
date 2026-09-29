@@ -349,19 +349,6 @@ export function App() {
         <nav className="saved-view-tabs" aria-label="Saved filter tabs">
           <span className={activeViewId === "all" ? "saved-view-tab active" : "saved-view-tab"}>
             <button onClick={selectAllView}>All RFQs</button>
-            <button
-              className="share-view-button"
-              onClick={() => copySharedView({
-                id: "all",
-                name: "All RFQs shared view",
-                globalQuery: "",
-                group: emptyFilterGroup(),
-                columnFilters: {},
-                columnWidths: [...allRfqsColumnWidths],
-              })}
-              aria-label="Copy All RFQs view link"
-              title="Copy share link"
-            ><ShareIcon /></button>
           </span>
           {savedViews.map((view) => (
             <span className={activeViewId === view.id ? "saved-view-tab active" : "saved-view-tab"} key={view.id}>

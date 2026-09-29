@@ -92,6 +92,34 @@ test("extracts the alternate Q-series layout", () => {
   assert.equal(parsed.deliveryDays, 100);
 });
 
+test("extracts mixed-format buyer codes and bracketed NAICS values", () => {
+  const parsed = parseRfqText(
+    `
+   SPE7M8-26-Q-0215
+   2026 AUG 14
+ 5. ISSUED BY
+     DLA LAND AND MARITIME
+     ELECTRICAL DEVICES DIV
+     Buyer: RICKIE ALLEN PMCM69V Tel: (614) 693-4328
+     Email: RICKIE.ALLEN@DLA.MIL
+ NORTH AMERICAN INDUSTRY CLASSIFICATION SYSTEM [334413] applies to this solicitation.
+`,
+    "SPE7M826Q0215.pdf",
+  );
+
+  assert.equal(parsed.buyerName, "RICKIE ALLEN");
+  assert.equal(parsed.buyerCode, "PMCM69V");
+  assert.equal(parsed.naics, "334413");
+});
+
+test("extracts parenthesized NAICS values", () => {
+  const parsed = parseRfqText(
+    "NORTH AMERICAN INDUSTRY CLASSIFICATION SYSTEM (336413) applies to this solicitation.",
+    "SPE7L326Q1323.pdf",
+  );
+  assert.equal(parsed.naics, "336413");
+});
+
 test("extracts and deduplicates approved manufacturer parts from section B", () => {
   const parsed = parseRfqText(
     `

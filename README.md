@@ -41,12 +41,12 @@ The API starts an incremental synchronizer by default. It checks the current DIB
 - completed archives are skipped once their PDF ZIP, fixed-width index, and batch ZIP have been successfully ingested;
 - the explicit **Re-sync** button is the only automatic path that re-downloads and replaces an existing day.
 
-The toolbar defaults to all stored dates. `From` and `To` are optional bounds. Both the scheduled archive pass and **Sync latest** fill any missing archives from the latest seven completed days, skipping finalized days, and then check today. A progress row reports the current archive download, PDF parsing, live-page scan, or live-PDF download. **Re-sync** refreshes only the newest stored day inside the current range. The toolbar also reports the most recently completed sync.
+The toolbar defaults to all stored dates. `From` and `To` are optional bounds. Both the scheduled archive pass and **Sync latest** fill any missing archives in the configured backfill horizon, skipping finalized days, and then check today. A progress row reports the current archive download, PDF parsing, live-page scan, or live-PDF download. **Re-sync** refreshes only the newest stored day inside the current range. The toolbar also reports the most recently completed sync.
 
 Manual equivalents are available for operations and debugging:
 
 ```bash
-npm run sync:manifests               # stage the latest week immediately from the small index/batch files
+npm run sync:manifests               # stage the configured horizon from the small index/batch files
 npm run sync:manifests -- --since 2026-09-07
 npm run sync                         # newest completed archive, then today
 npm run sync:today                   # today only
@@ -54,13 +54,13 @@ npm run sync:today -- --max-new 10  # bounded smoke run
 npm run sync -- --archives-only
 ```
 
-`sync:manifests` is the demo-safe fast path. It downloads only each day's small fixed-width index and batch ZIP, makes those RFQs searchable immediately, and leaves the large PDF archives to finish in the background. A later full archive import replaces the staged metadata for that date with PDF-derived records.
+`sync:manifests` is the demo-safe fast path. It downloads only each day's small fixed-width index and batch ZIP, makes those RFQs searchable immediately, and leaves the large PDF archives to finish in the background. The compact files do not contain buyer name, supply chain, or NAICS, so those columns remain empty until the full PDF archive for that day is extracted. A later full archive import replaces the staged metadata for that date with PDF-derived records. `npm run enrich:metadata` reapplies the current PDF parser to missing metadata in archives already stored locally.
 
 ## Saved and shared views
 
-Every tab owns its filters and column widths, including **All RFQs**. Use the link button on a tab to copy a self-contained URL; opening that URL validates the embedded state, adds it as a local tab, and selects it without requiring an account. The `+` button creates a blank tab or imports a pasted shared-view URL.
+Every tab owns its filters and column widths, including **All RFQs**. Saved tabs have a link button that copies a self-contained URL; opening that URL validates the embedded state, adds it as a local tab, and selects it without requiring an account. The default **All RFQs** tab is not shareable. The `+` button creates a blank tab or imports a pasted shared-view URL.
 
-Set `DIBBS_SYNC_ENABLED=false` to disable the in-process timers. Intervals can be changed with `DIBBS_TODAY_INTERVAL_MINUTES` and `DIBBS_ARCHIVE_INTERVAL_MINUTES`; the manual/CLI backfill horizon is controlled by `DIBBS_ARCHIVE_DAYS` and defaults to `7`. Current-day result pages are fetched six at a time by default; tune that bounded fan-out with `DIBBS_PAGE_CONCURRENCY` (maximum `12`). DIBBS dates default to `America/New_York` and downloaded material lives under the ignored `data/dibbs/` directory.
+Set `DIBBS_SYNC_ENABLED=false` to disable the in-process timers. Intervals can be changed with `DIBBS_TODAY_INTERVAL_MINUTES` and `DIBBS_ARCHIVE_INTERVAL_MINUTES`; the manual/CLI backfill horizon is controlled by `DIBBS_ARCHIVE_DAYS` and defaults to `17` published archives (roughly three calendar weeks). Current-day result pages are fetched six at a time by default; tune that bounded fan-out with `DIBBS_PAGE_CONCURRENCY` (maximum `12`). DIBBS dates default to `America/New_York` and downloaded material lives under the ignored `data/dibbs/` directory.
 
 ## Production build
 

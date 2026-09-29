@@ -49,7 +49,9 @@ export function parseRfqText(text: string, filename: string): ParsedRfq {
     (match) => `${match[1]}-${months[match[2]]}-${match[3].padStart(2, "0")}`,
   );
   const buyer = clean.match(/Name:\s*(.+?)\s+Buyer Code:\s*([^\s]+)/i);
-  const aviationBuyer = clean.match(/Buyer:\s*(.+?)\s+([A-Z]{2,}\d{3,})\s+Tel:/i);
+  const aviationBuyer = clean.match(
+    /Buyer:\s*(.+?)\s+((?=[A-Z0-9]*\d)[A-Z0-9]{5,})\s+Tel:/i,
+  );
   const issuedByLines = extractIssuedByLines(clean);
   const sectionBIndex = clean.search(/\bSECTION B\b/i);
   const itemSection = sectionBIndex >= 0 ? clean.slice(sectionBIndex) : clean;
@@ -83,7 +85,10 @@ export function parseRfqText(text: string, filename: string): ParsedRfq {
     buyerEmail: matchValue(clean, /Email:\s*([^\s]+)/i),
     agency: issuedByLines[0] ?? null,
     supplyChain: issuedByLines[1] ?? null,
-    naics: matchValue(clean, /NORTH AMERICAN INDUSTRY CLASSIFICATION SYSTEM\s+(\d{6})/i),
+    naics: matchValue(
+      clean,
+      /NORTH AMERICAN INDUSTRY CLASSIFICATION SYSTEM(?:\s+\(NAICS\))?(?:\s+CODE)?\s*[[(]?\s*(\d{6})/i,
+    ),
     deliveryDays:
       numberValue(clean, /DELIVERY \(IN DAYS\):\s*0*(\d+)/i) ??
       numberValue(clean, /\b(\d+)\s+DAYS ADO\b/i),
