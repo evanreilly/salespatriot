@@ -415,6 +415,7 @@ function installVariableColumnLayout(
   const baseGetState = grid.getState;
   const baseRenderRows = grid.renderViewportRows;
   const baseRenderCells = grid.renderViewportCells;
+  const renderedRowIds = new WeakMap<object, number>();
 
   grid.getState = () => {
     const state = baseGetState();
@@ -459,6 +460,7 @@ function installVariableColumnLayout(
 
   grid.renderViewportRows = () => {
     baseRenderRows();
+    refreshRecycledRowContents(grid, renderedRowIds);
     applyColumnLayout(grid, widthsRef.current);
     grid.container.dispatchEvent(new Event("fast-grid-positionchange", { bubbles: true }));
   };
@@ -467,6 +469,22 @@ function installVariableColumnLayout(
     applyColumnLayout(grid, widthsRef.current);
     grid.container.dispatchEvent(new Event("fast-grid-positionchange", { bubbles: true }));
   };
+}
+
+function refreshRecycledRowContents(grid: Grid, renderedRowIds: WeakMap<object, number>) {
+  for (const component of Object.values(grid.rowComponentMap)) {
+    const previousRowId = renderedRowIds.get(component);
+    renderedRowIds.set(component, component.id);
+    if (previousRowId === undefined || previousRowId === component.id) continue;
+
+    const row = grid.rowManager.rows[component.id];
+    if (!row) continue;
+    component.cells = row.cells;
+    for (const cellComponent of Object.values(component.cellComponentMap)) {
+      const cell = row.cells[cellComponent.id];
+      if (cell) cellComponent.setContent(cell.v);
+    }
+  }
 }
 
 function refreshColumnLayout(grid: Grid, widths: number[]) {
