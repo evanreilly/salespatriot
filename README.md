@@ -2,6 +2,10 @@
 
 A fast local workspace for reviewing DLA RFQs. It synchronizes published DIBBS archives and the still-changing current day into SQLite, renders all stored records with [Fast Grid](https://github.com/gabrielpetersson/fast-grid), and opens each original PDF directly from its local source.
 
+## Live demo
+
+Sales Patriot is deployed at [https://dysonsphere.dev/salespatriot/](https://dysonsphere.dev/salespatriot/).
+
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the stack, ingestion pipeline, PDF parsing strategy, database model, and architecture diagrams.
 
 ## Stack
