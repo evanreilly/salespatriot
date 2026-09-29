@@ -10,6 +10,8 @@ import {
 } from "react";
 import type { ApprovedPart, Rfq, RfqDay, RfqListResponse, SyncProgress, SyncStatus } from "../shared/rfq";
 import { FastGrid, type PopoverAnchor } from "./FastGrid";
+import { BuyerTagKey, BuyerTreemapPanel } from "./BuyerTreemap";
+import { buildBuyerInsights, buyerInsightMap } from "./buyerInsights";
 import { AddViewPopover, FilterBuilderPanel, SaveViewPopover } from "./FilterDialogs";
 import {
   applyCachedRfqFilters,
@@ -48,6 +50,8 @@ export function App() {
   const [savedViews, setSavedViews] = useState<SavedFilterView[]>(loadSavedViews);
   const [activeViewId, setActiveViewId] = useState("all");
   const [builderRequest, setBuilderRequest] = useState<{ field?: FilterField } | null>(null);
+  const [buyerTreeOpen, setBuyerTreeOpen] = useState(false);
+  const [buyerTreeFocus, setBuyerTreeFocus] = useState<string | null>(null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [addViewOpen, setAddViewOpen] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
@@ -181,6 +185,8 @@ export function App() {
     () => filteredRfqs.reduce((total, rfq) => total + (rfq.estimatedValue ?? 0), 0),
     [filteredRfqs],
   );
+  const buyerInsights = useMemo(() => buildBuyerInsights(filteredRfqs), [filteredRfqs]);
+  const buyersByName = useMemo(() => buyerInsightMap(buyerInsights), [buyerInsights]);
   const filterCount = filterGroup.rules.length + Object.keys(columnFilters).length + (globalQuery.trim() ? 1 : 0);
 
   const selectAllView = () => {
@@ -390,6 +396,16 @@ export function App() {
               Filters{filterCount ? ` (${filterCount})` : ""}
             </button>
           </div>
+          <button
+            className={buyerTreeOpen ? "buyer-tree-button active" : "buyer-tree-button"}
+            onClick={() => {
+              setBuyerTreeFocus(null);
+              setBuyerTreeOpen((open) => !open);
+            }}
+          >
+            <TreeMapIcon /> Buyer tree
+          </button>
+          <BuyerTagKey />
         </section>
 
         {builderRequest && (
@@ -400,6 +416,18 @@ export function App() {
             initialField={builderRequest.field}
             onChange={setFilterGroup}
             onClose={() => setBuilderRequest(null)}
+          />
+        )}
+
+        {buyerTreeOpen && (
+          <BuyerTreemapPanel
+            key={buyerTreeFocus ?? "all-buyers"}
+            insights={buyerInsights}
+            initialBuyer={buyerTreeFocus}
+            onClose={() => {
+              setBuyerTreeOpen(false);
+              setBuyerTreeFocus(null);
+            }}
           />
         )}
 
@@ -421,6 +449,7 @@ export function App() {
               <FastGrid
                 rfqs={rfqs}
                 visibleRfqs={filteredRfqs}
+                buyerInsights={buyersByName}
                 onSelect={(rfq, anchor, field) => {
                   setPartsPopover(null);
                   setPreviewPopover({ rfq, anchor, field });
@@ -458,6 +487,11 @@ export function App() {
             setFullDetails({ rfq: previewPopover.rfq, anchor: previewPopover.anchor });
             setPreviewPopover(null);
           }}
+          onShowBuyerBreakdown={() => {
+            setBuyerTreeFocus(previewPopover.rfq.buyerName);
+            setBuyerTreeOpen(true);
+            setPreviewPopover(null);
+          }}
         />
       )}
       {partsPopover && (
@@ -477,12 +511,14 @@ function RfqPreviewPopover({
   field,
   onClose,
   onOpenFull,
+  onShowBuyerBreakdown,
 }: {
   rfq: Rfq;
   anchor: PopoverAnchor;
   field: FilterField;
   onClose: () => void;
   onOpenFull: () => void;
+  onShowBuyerBreakdown: () => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const popoverStyle = useCellAttachedPopover(anchor, panelRef, 520);
@@ -510,6 +546,7 @@ function RfqPreviewPopover({
     },
     { field: "closeDate" as const, label: "Closes", value: formatLongDate(rfq.closeDate) },
     { field: "buyerName" as const, label: "Buyer", value: rfq.buyerName },
+    { field: "buyerEmail" as const, label: "Buyer email", value: rfq.buyerEmail },
     { field: "supplyChain" as const, label: "Supply chain", value: rfq.supplyChain ?? rfq.agency },
   ].filter((detail) => detail.field !== field);
 
@@ -550,7 +587,12 @@ function RfqPreviewPopover({
         <a href={`/api/rfqs/${rfq.id}/pdf`} target="_blank" rel="noreferrer">
           Source PDF <ArrowUpRight />
         </a>
-        <button onClick={onOpenFull}>Open full details</button>
+        <div>
+          {field === "buyerName" && rfq.buyerName && (
+            <button onClick={onShowBuyerBreakdown}>Show bidder breakdown</button>
+          )}
+          <button onClick={onOpenFull}>Open full details</button>
+        </div>
       </footer>
     </section>
   );
@@ -848,6 +890,10 @@ function CopyIcon() {
 
 function ShareIcon() {
   return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.2 12.8 12.8 7.2M8.1 5.2l1.5-1.5a3.3 3.3 0 0 1 4.7 4.7l-1.5 1.5M11.9 14.8l-1.5 1.5a3.3 3.3 0 0 1-4.7-4.7l1.5-1.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+}
+
+function TreeMapIcon() {
+  return <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="12.5" y="3" width="4.5" height="5" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="3" y="12.5" width="5" height="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="9.5" y="9.5" width="7.5" height="7.5" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>;
 }
 
 async function copyText(value: string) {

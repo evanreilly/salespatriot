@@ -21,7 +21,7 @@ Prerequisites: Node.js 22+, `unzip`, and Poppler's `pdftotext` command.
 
 ```bash
 npm install
-npm run import -- /Users/evanreilly/Downloads/CA260927.ZIP
+npm run import -- /path/to/CA260927.ZIP
 npm run dev
 ```
 
@@ -59,6 +59,18 @@ npm run sync -- --archives-only
 ## Saved and shared views
 
 Every tab owns its filters and column widths, including **All RFQs**. Saved tabs have a link button that copies a self-contained URL; opening that URL validates the embedded state, adds it as a local tab, and selects it without requiring an account. The default **All RFQs** tab is not shareable. The `+` button creates a blank tab or imports a pasted shared-view URL.
+
+## Buyer signals
+
+Buyer cells show compact relationship and open-value tags. `REL` is deterministic demo data standing in for prior CRM/award history; `$` through `$$$$` are calculated from the estimated value of that buyer's open RFQs under the current filters. **Buyer tree** opens a treemap sized by those same values. Clicking a buyer cell exposes the buyer email and a **Show bidder breakdown** shortcut to the treemap.
+
+For a temporary external demo, install `cloudflared`, keep `npm run dev` running, and start a Quick Tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:5173 --no-autoupdate
+```
+
+Vite is configured to accept `*.trycloudflare.com` hosts. Quick Tunnel URLs are temporary and should not be treated as production deployment URLs.
 
 Set `DIBBS_SYNC_ENABLED=false` to disable the in-process timers. Intervals can be changed with `DIBBS_TODAY_INTERVAL_MINUTES` and `DIBBS_ARCHIVE_INTERVAL_MINUTES`; the manual/CLI backfill horizon is controlled by `DIBBS_ARCHIVE_DAYS` and defaults to `17` published archives (roughly three calendar weeks). Current-day result pages are fetched six at a time by default; tune that bounded fan-out with `DIBBS_PAGE_CONCURRENCY` (maximum `12`). DIBBS dates default to `America/New_York` and downloaded material lives under the ignored `data/dibbs/` directory.
 

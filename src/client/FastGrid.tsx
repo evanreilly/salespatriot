@@ -1,6 +1,7 @@
 import { FilterCell, Grid, HeaderCell } from "fast-grid";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { Rfq } from "../shared/rfq";
+import { spendTierLabel, type BuyerInsight } from "./buyerInsights";
 import { columnFields, type FilterField } from "./filters";
 import {
   DEFAULT_COLUMN_WIDTH,
@@ -27,6 +28,7 @@ const headers = [
 type Props = {
   rfqs: Rfq[];
   visibleRfqs: Rfq[];
+  buyerInsights: Map<string, BuyerInsight>;
   onSelect: (rfq: Rfq, anchor: PopoverAnchor, field: FilterField) => void;
   onSelectNsn: (rfq: Rfq, anchor: PopoverAnchor) => void;
   columnFilters: Record<number, string>;
@@ -42,6 +44,7 @@ export type PopoverAnchor = { element: HTMLElement };
 export function FastGrid({
   rfqs,
   visibleRfqs,
+  buyerInsights,
   onSelect,
   onSelectNsn,
   columnFilters,
@@ -67,6 +70,7 @@ export function FastGrid({
   const sortRequestsRef = useRef(new Map<number, { view: Rfq[]; key: string }>());
   const recordsRef = useRef<Rfq[]>(rfqs);
   const visibleRecordsRef = useRef<Rfq[]>(visibleRfqs);
+  const buyerInsightsRef = useRef(buyerInsights);
   const sortRulesRef = useRef(sortRules);
   const columnWidthsRef = useRef(normalizeColumnWidths(columnWidths));
   const onSelectRef = useRef(onSelect);
@@ -77,6 +81,7 @@ export function FastGrid({
 
   recordsRef.current = rfqs;
   visibleRecordsRef.current = visibleRfqs;
+  buyerInsightsRef.current = buyerInsights;
   sortRulesRef.current = sortRules;
   onSelectRef.current = onSelect;
   onSelectNsnRef.current = onSelectNsn;
@@ -239,6 +244,7 @@ export function FastGrid({
       decorateFilterCells(grid, onOpenFilterBuilderRef, sortRulesRef.current);
       decorateHeaderCells(grid, fitColumn, startColumnResize);
       decorateSolicitationCells(grid, recordsRef.current);
+      decorateBuyerCells(grid, recordsRef.current, buyerInsightsRef.current);
       applyColumnLayout(grid, columnWidthsRef.current);
     };
     const observer = new MutationObserver(() => queueMicrotask(decorate));
@@ -293,7 +299,8 @@ export function FastGrid({
     grid.renderViewportCells();
     grid.scrollbar.refreshThumb();
     decorateSolicitationCells(grid, rfqs);
-  }, [columnFilters, orderedIndexes, rfqs, sortRules]);
+    decorateBuyerCells(grid, rfqs, buyerInsights);
+  }, [buyerInsights, columnFilters, orderedIndexes, rfqs, sortRules]);
 
   useEffect(() => {
     const grid = gridRef.current;
@@ -317,6 +324,7 @@ export function FastGrid({
     grid.renderViewportCells();
     grid.scrollbar.refreshThumb();
     decorateSolicitationCells(grid, recordsRef.current);
+    decorateBuyerCells(grid, recordsRef.current, buyerInsightsRef.current);
   }, [resetVersion]);
 
   return (
@@ -579,6 +587,35 @@ function decorateSolicitationCells(grid: Grid, rfqs: Rfq[]) {
     link.title = `Open ${rfq.solicitationNumber} PDF`;
     link.setAttribute("aria-label", link.title);
   }
+}
+
+function decorateBuyerCells(grid: Grid, rfqs: Rfq[], insights: Map<string, BuyerInsight>) {
+  for (const row of Object.values(grid.rowComponentMap)) {
+    const cell = row.cellComponentMap[6];
+    const rfq = rfqs[row.id];
+    if (!cell || !rfq?.buyerName) continue;
+    const insight = insights.get(rfq.buyerName);
+    cell.el.classList.add("buyer-cell");
+    let tags = cell.el.querySelector<HTMLElement>(".buyer-cell-tags");
+    if (!tags) {
+      tags = document.createElement("span");
+      tags.className = "buyer-cell-tags";
+      cell.el.appendChild(tags);
+    }
+    const relationship = insight?.relationship
+      ? '<span class="buyer-tag relationship-tag" title="Prior relationship / win">REL</span>'
+      : "";
+    const tier = insight?.spendTier ?? 0;
+    const spend = tier
+      ? `<span class="buyer-tag spend-tag tier-${tier}" title="${formatBuyerSpend(insight?.totalValue ?? 0)} in open RFQs">${spendTierLabel(tier)}</span>`
+      : "";
+    const markup = `${relationship}${spend}`;
+    if (tags.innerHTML !== markup) tags.innerHTML = markup;
+  }
+}
+
+function formatBuyerSpend(value: number) {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
 function syncFilterCells(grid: Grid) {
